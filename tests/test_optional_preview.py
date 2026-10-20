@@ -143,6 +143,9 @@ class PrepareTests(unittest.TestCase):
     def test_prepare_messages_use_current_local_state_path(self):
         source = (OPTIONAL / "prepare.py").read_text(encoding="utf-8")
         self.assertNotIn("public-release/.local-state", source)
+
+    @unittest.skipUnless(os.name == "posix", "Private POSIX file modes require WSL on Windows")
+    def test_prepare_refuses_output_outside_private_state(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             state = root / ".local-state"

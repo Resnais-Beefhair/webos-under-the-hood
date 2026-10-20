@@ -27,6 +27,8 @@ jobs:
       - name: Check out public source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified from upstream tag
         with:
+          # Audit the exact source head, not GitHub's unpublished synthetic merge metadata.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
@@ -50,6 +52,8 @@ jobs:
       - name: Check out public source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          # Audit the exact source head, not GitHub's unpublished synthetic merge metadata.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
