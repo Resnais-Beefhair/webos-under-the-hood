@@ -1,0 +1,24 @@
+{
+  "phase": "verified",
+  "dns_checks": 24,
+  "dns_errors": 0,
+  "foreground_unchanged": true,
+  "health_invariants_equal": [
+    "boot_id",
+    "settings",
+    "launchpoints",
+    "privacy_units",
+    "boot_hook_hashes",
+    "firewall_v4",
+    "firewall_v6",
+    "sdx"
+  ],
+  "probe_process_exited": true,
+  "no_router_changes": true,
+  "no_reboots": true,
+  "no_app_launch_or_close": true,
+  "playback_not_tested": true,
+  "cold_boot_not_tested": true,
+  "capture_date": "2026-10-19",
+  "provenance": "Allowlisted fields from the original on-device change verification. Device IDs, addresses, target alias and timestamps removed. Counts refer to that original controlled probe, not to the public packaging test suite."
+}

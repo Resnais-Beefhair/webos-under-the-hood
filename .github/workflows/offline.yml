@@ -1,0 +1,44 @@
+name: Offline verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python }} (no TV or secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11', '3.13']
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out public source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified from upstream tag
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, verified from upstream tag
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Offline success and failure tests
+        run: python -m unittest discover -s tests -v
+      - name: CLI and publication checks
+        run: |
+          python tvctl.py --help
+          python tools/check_publication.py
+
+# No TV address, key, live device connection, pairing credential or provider API
+# token is used. Results apply only to the exact commit tested in each run.

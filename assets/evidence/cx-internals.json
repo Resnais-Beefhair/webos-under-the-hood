@@ -1,0 +1,58 @@
+{
+  "build_id": "20260421173614",
+  "home_preview_original_backup_exists": true,
+  "kernel_release": "4.4.84-219.jcl4tvmr.6",
+  "mounts": [
+    {
+      "filesystem": "squashfs",
+      "mode": "ro",
+      "target": "/"
+    },
+    {
+      "filesystem": "devtmpfs",
+      "mode": "rw",
+      "target": "/etc/systemd/system/voiceinput.service"
+    },
+    {
+      "filesystem": "ext4",
+      "mode": "ro",
+      "target": "/usr/palm/applications/com.webos.app.home/qml/Controllers/PreviewInterfaces/Interfaces.qml"
+    },
+    {
+      "filesystem": "ext4",
+      "mode": "ro",
+      "target": "/mnt/lg/cmn_data/checkpoint/com.webos.app.home"
+    },
+    {
+      "filesystem": "ext4",
+      "mode": "ro",
+      "target": "/tmp/checkpoint/com.webos.app.home"
+    }
+  ],
+  "normal_telnet_disabled_flag": true,
+  "os_info": {
+    "webos_build_id": "21",
+    "webos_manufacturing_version": "04.64.00",
+    "webos_name": "webOS TV",
+    "webos_release": "5.6.2"
+  },
+  "services": {
+    "contentminer.service": {
+      "ActiveState": "inactive",
+      "LoadState": "masked",
+      "UnitFileState": "masked-runtime"
+    },
+    "voiceconductor.service": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "UnitFileState": "static"
+    },
+    "voiceinput.service": {
+      "ActiveState": "inactive",
+      "LoadState": "masked",
+      "UnitFileState": "masked"
+    }
+  },
+  "capture_date": "2026-10-19",
+  "provenance": "Read-only SSH capture from one rooted OLED65CX6LA; identifiers omitted at collection time. Only the listed fields were collected."
+}
