@@ -4,6 +4,7 @@ from __future__ import print_function
 import os
 import subprocess
 import sys
+sys.dont_write_bytecode = True
 import manage_boot_hook
 import preview_runtime
 

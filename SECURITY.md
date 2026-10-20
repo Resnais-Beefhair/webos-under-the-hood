@@ -2,7 +2,7 @@
 
 This toolkit runs privileged operations on an owner's rooted TV. Treat review, ownership confirmation, SSH host-key pinning, per-feature consent and private checkpoints as requirements.
 
-Do not post an exploit, credential, private capture, pairing key, complete firmware file or identifiable diagnostic dump in a public issue. If GitHub's private vulnerability-reporting option is available on the repository's Security page, use it. Otherwise open only a minimal, non-sensitive issue asking the maintainer for a private reporting route; do not include vulnerability details, attachments or diagnostics in that request. This policy does not imply that a private reporting endpoint or email address is configured.
+Do not post an exploit, credential, private capture, pairing key, complete firmware file or identifiable diagnostic dump in a public issue. GitHub private vulnerability reporting is enabled for this repository: [privately report a vulnerability](https://github.com/Resnais-Beefhair/webos-under-the-hood/security/advisories/new). Sign in to GitHub to use the form; send the smallest redacted reproduction, not a raw device capture or firmware file. If the private form is unavailable, open only a minimal, non-sensitive issue asking for a private reporting route, without vulnerability details or attachments.
 
 If you find an unsafe write default, guard bypass, command injection, unowned mount removal or data leak, stop using the affected feature. Preserve local evidence privately and use the configured private reporting route when one is available. Root/firmware vulnerabilities in upstream components belong to their maintainers' reporting process.
 

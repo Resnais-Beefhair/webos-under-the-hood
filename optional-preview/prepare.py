@@ -118,7 +118,7 @@ def validate_output_dir(output_dir):
     # Reject symlinks in every existing path component below .local-state.
     lexical = Path(os.path.abspath(str(requested)))
     if not _inside(lexical, LOCAL_STATE.absolute()) or lexical == LOCAL_STATE.absolute():
-        raise ValueError("output directory must be a child of public-release/.local-state")
+        raise ValueError("output directory must be a child of .local-state")
     relative = lexical.relative_to(LOCAL_STATE.absolute())
     cursor = LOCAL_STATE
     for part in relative.parts:
@@ -144,7 +144,7 @@ def write_bundle(output_dir, artifacts):
     resolved_root = state_root.resolve(strict=True)
     resolved_output = output_dir.resolve(strict=False)
     if not _inside(resolved_output, resolved_root) or resolved_output == resolved_root:
-        raise ValueError("output directory must be below public-release/.local-state")
+        raise ValueError("output directory must be below .local-state")
     parent = resolved_root
     for part in resolved_output.parent.relative_to(resolved_root).parts:
         parent = parent / part
@@ -171,7 +171,7 @@ def write_bundle(output_dir, artifacts):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, help="user-extracted original Interfaces.qml")
-    parser.add_argument("--output-dir", required=True, help="fresh output directory below public-release/.local-state/")
+    parser.add_argument("--output-dir", required=True, help="fresh output directory below .local-state/")
     args = parser.parse_args(argv)
     source_path = Path(args.source)
     if source_path.is_symlink() or not source_path.is_file():

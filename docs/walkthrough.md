@@ -8,6 +8,8 @@ Follow [connection.md](connection.md). Root/HBC and the TV's existing Python are
 
 ```sh
 python3 tvctl.py --help
+python3 tvctl.py --version
+python3 tvctl.py --list-features
 python3 -B -m unittest discover -s tests -v
 umask 077
 mkdir -p .local-state
@@ -15,7 +17,7 @@ chmod 700 .local-state
 python3 tvctl.py --target lg-tv audit --output .local-state/audit.json
 ```
 
-The audit reads selected setting schemas/values, root/build identity, SDX authentication, launchpoints, foreground app and the one active Ethernet DNS service. It sends no setters, mounts or reloads. Getter calls can demand-start a native Luna service. The audit is **private**: it includes a boot ID and foreground application. Do not upload it. A successful audit is a prerequisite, not approval to write.
+The audit reads selected setting schemas/values, root/build identity, SDX authentication, launchpoints, foreground app and the one active Ethernet DNS service. It also reports allowlisted service states, exact-target mount counts/modes, only the two public toolkit hook names/states/hashes, and boolean SSH/telnet preference flags. Other hook names/contents, credentials, packet payloads and arbitrary user directories are not collected. A missing known hook is not proof that no legacy/custom hook exists; a preference flag is not a port test, and mount counts alone do not prove ownership. It sends no setters, mounts or reloads. Getter calls can demand-start a native Luna service. The audit is **private**: it includes a boot ID and foreground application. Do not upload it. A successful audit is a prerequisite, not approval to write.
 
 ## 2. Choose the core features separately
 
@@ -27,13 +29,19 @@ The defaults below **only plan**. `--target` and `--confirm-model` are global op
 python3 tvctl.py --target lg-tv settings --feature collection
 python3 tvctl.py --target lg-tv settings --feature hbbtv
 python3 tvctl.py --target lg-tv settings --feature updates
+python3 tvctl.py --target lg-tv settings --feature acr
+python3 tvctl.py --target lg-tv settings --feature advertising
+python3 tvctl.py --target lg-tv settings --feature voice
 ```
 
 - `collection` sets `option.watchedListCollection` and `option.hbbTvDeviceId` to the string `"off"`.
 - `hbbtv` separately sets `option.hbbTV` to `"off"`. Broadcast interactive/red-button services may stop working.
 - `updates` sets `support.automaticUpdate` to `"off"`. This avoids an automatic update preference but also postpones security fixes and **does not guarantee firmware is frozen**. Choose a deliberate manual update policy; compatibility and re-rootability of future firmware are unknown.
+- `acr` separately requests `option.livePlus="off"`; collection is **not** the ACR switch.
+- `advertising` requests `general.adCookie="off"`; this is not a universal ad-ID reset or consent withdrawal.
+- `voice` requests `option.turnOnByVoice="off"` and `general.voiceLongDistance="off"`. It spans two native setters; a partial failure keeps the checkpoint for explicit reviewed rollback, never automatic restoration. It does not prove microphone isolation.
 
-The CLI checks native categories, string-valued enums and the exact tested build. It does not replay unverified switches or EULA objects. Read the [inventory](changes.md) before choosing.
+The CLI checks native categories, string-valued enums and the exact tested build. It does not replay unverified switches or EULA objects. Read the [coverage matrix](privacy-matrix.md) and [inventory](changes.md) before choosing. `hbbTV` later read `"on"` after an owner-reported start; `"off"` is not a demonstrated persistent choice, and the tool does not guess `offByUser`.
 
 ### Apply one feature, then verify
 
@@ -70,7 +78,7 @@ python3 tvctl.py --target lg-tv --confirm-model 'LG OLED65CX6LA' dns --servers 9
 python3 tvctl.py --target lg-tv audit --output .local-state/after-dns.json
 ```
 
-The CLI discovers exactly one active Ethernet service on the selected TV; no other LAN host is scanned. It writes only `Nameservers.Configuration`, checks both stored/effective lists, and rejects unrelated ConnMan drift. A `verified` result proves those configuration readbacks, **not** blocking coverage or streaming playback. Keep your saved original list for recovery. Wi-Fi/multiple active Ethernet services are outside this tool's scope.
+The CLI discovers exactly one active Ethernet service on the selected TV; no other LAN host is scanned. It writes only `Nameservers.Configuration`, checks both stored/effective lists, and rejects unrelated ConnMan drift. A `verified` result proves those configuration readbacks, **not** blocking coverage or streaming playback. A separate bounded `example.com` probe reports `answered`, `failed` or `unavailable` with its resolver-path limitations. A failed probe leaves the verified checkpoint intact and never triggers automatic rollback. Read the [DNS-recipient/local alternative trade-offs](changes.md#dns-recipient-choices-and-the-local-alternative) and [failure playbook](recovery.md#failure-playbook-streaming-breaks-after-dns). Keep your saved original list for recovery. Wi-Fi/multiple active Ethernet services are outside this tool's scope.
 
 Filtering cannot isolate the TV from the LAN or cover all direct-IP, IPv6 or encrypted-DNS traffic. It is not a reliable YouTube in-video ad blocker. Verify your ordinary apps and Plex, not just a DNS test name. [Limitations](internals.md#dns-is-one-layer)
 

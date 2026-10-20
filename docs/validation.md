@@ -36,11 +36,25 @@ The public `tvctl.py audit` successfully ran against the actual source TV: the e
 
 All four generated Python helpers were compiled **in the TV's existing Python 2.7.15 without writing files**, and the public Home reload helper's read-only `--preflight` successfully checked native schemas/running processes. No mount, hook install, service stop, application close/launch or reload was invoked by that check. It exposed and fixed a Python-2-incompatible shell-quoting call before delivery.
 
+### Later read-only post-start observation
+
+On 20 October 2026 the owner reported starting the TV after leaving it off overnight. Pinned SSH still worked and ordinary telnet refused; effective voice/content-mining masks, stored/effective filtering DNS, all three exact owned read-only preview binds and the expected guarded QML digest were present. Home had no CRIU snapshot marker. Collection, device-ID, ACR/voice/ad and update-preference values still read `"off"`; SDX was authenticated. These are current-state readbacks, not proof of application playback or visual presentation.
+
+**Exception: `option.hbbTV` read `"on"`, unlike the earlier `"off"` observation.** It was not written again during the check. The native enum also exposes `onByUser`/`offByUser`, but their persistence semantics were not established and no experimental replacement was made. Recheck this value explicitly; do not claim the original HbbTV change stayed disabled or silently add a recurring setter.
+
+The current boot ID equalled the preserved pre-start baselines. Uptime/start metadata was collected privately, but these observations do **not** independently prove a physical cold boot or explain its identity behavior. The cold-boot criterion remains open. [Allowlisted post-start receipt](../assets/evidence/post-start-verification.json) omits raw boot IDs, PIDs, timestamps, addresses, hook paths and other private diagnostics. The public service payload's `--check` also ran in read-only mode; no hook was installed/replaced, no mount or setting changed, and no Home reload/reboot was requested.
+
 ### Publication checks
 
 The package uses a fresh allowlisted source tree, not the private project or its Git history. The offline checker inspects textual identifiers, release filenames, local links and available Git history; manual review covers evidence pixels, metadata, vendor-source boundaries and attribution. It is a backstop, not a guarantee that a secret detector recognizes every possible secret. Original source code and firmware-derived local state are separated explicitly.
 
 Three real-data evidence panels were rendered locally from [allowlisted JSON](../assets/evidence/cx-internals.json) and visually checked for legibility and identifiers. They are **reformatted observations, not terminal screenshots**. [Gallery](gallery.md)
+
+### Version 0.1.0 audit expansion
+
+The current four generated helpers were again compiled in the TV's Python 2.7.15 **in memory**, and the current reload helper's native getter/schema `--preflight` passed, with helper imports held in `sys.modules` and bytecode disabled. The pinned transformation of the privately preserved original QML matched the expected output digest. No helper was deployed and no mount, app close/launch, reload, setting or reboot occurred. Large verification source was streamed over pinned SSH stdin, not installed as a TV file.
+
+The expanded public audit was exercised again read-only on the source TV after integration. It returned masked/inactive voiceinput/contentminer, active `voiceconductor`, exact-target mount counts/modes, fixed public-hook states/hashes and SSH/telnet preference booleans. In this source setup the optional hook used a legacy/custom name, so the fixed public preview-hook path correctly reported absent; that is not proof of no persistence. Existing stacked hosts layers were reported as counts, not adopted or changed. The new `acr`/`advertising`/`voice` setters, DNS probe after apply and new Home-retry/boot-recovery paths were not live-invoked.
 
 ## Not completed or not supported
 
@@ -53,6 +67,6 @@ Three real-data evidence panels were rendered locally from [allowlisted JSON](..
 
 ## Hosted verification
 
-The pinned workflow runs offline tests on Python 3.9, 3.11 and 3.13, without a TV or device credentials. Check [GitHub Actions](https://github.com/Resnais-Beefhair/webos-under-the-hood/actions/workflows/offline.yml) for the result and exact commit of each hosted run. Local tests are **not** a hosted run, and hosted tests do not establish the unperformed device checks above. A repository publication is not a tagged release or a claim of broader compatibility.
+The pinned workflow runs offline tests on Linux with Python 3.9, 3.11 and 3.13, plus a Windows portable-host job that explicitly skips POSIX-only cases, without a TV or device credentials. Check [GitHub Actions](https://github.com/Resnais-Beefhair/webos-under-the-hood/actions/workflows/offline.yml) for the result and exact commit of each hosted run. Local tests are **not** a hosted run, and hosted tests do not establish the unperformed device checks above. A repository publication is not a tagged release or a claim of broader compatibility.
 
 Use [recovery.md](recovery.md) for the reader's verification checklist. Unknowns are stop conditions, not reasons to weaken guards.

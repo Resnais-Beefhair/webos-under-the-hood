@@ -8,7 +8,7 @@
 
 A smart TV is also a Linux computer. This project documents how one already-rooted LG OLED65CX6LA was inspected, given a safer management connection, and configured to reduce selected collection and recommendation features without dismantling its normal TV functions.
 
-It contains the **code, exact settings, connection instructions, checkpoints, recovery procedures and honest limits**. You can follow it yourself or give the repository to an agent. You do not need an AI account, Hermes, cloud inference or any paid service.
+It contains the **code, exact settings, connection instructions, checkpoints, recovery procedures and honest limits**. You can follow it yourself or give the repository to an agent. You do not need an AI account, cloud inference or any paid service.
 
 > **Not a universal debloater or rooting exploit.** Tested source device: **OLED65CX6LA · firmware 04.64.00 · webOS 5.6.2-21**, inspected on 19 October 2026. Other models and firmware are not validated. A valid SSH session and schema/hash matches are prerequisites, not proof that every feature is safe on another TV.
 
@@ -19,6 +19,8 @@ It contains the **code, exact settings, connection instructions, checkpoints, re
 3. Run the read-only audit, then choose individual changes in the [human walkthrough](docs/walkthrough.md). Planning does not apply changes.
 4. Keep your private checkpoints. Use the [verification and rollback guide](docs/recovery.md) after every feature and after a later, deliberately scheduled cold start.
 
+**Windows:** use WSL for the commands below, private `--output` files, checkpoints, mutations and the full suite. Native Windows supports read-only `audit` to stdout and portable tests only; POSIX-only cases explicitly skip. Do not weaken checkpoint permissions to bypass this boundary.
+
 ```sh
 git clone https://github.com/Resnais-Beefhair/webos-under-the-hood.git
 cd webos-under-the-hood
@@ -27,7 +29,7 @@ python3 -m unittest discover -s tests -v
 python3 tvctl.py --target lg-tv audit --output .local-state/audit.json
 ```
 
-`lg-tv` is **your own SSH alias**, not a built-in IP address. No command knows or guesses your TV's address. Linux/macOS and Windows through WSL are the documented host paths. The host CLI uses Python's standard library and OpenSSH; the TV uses its existing tools and Python 2.7. No TV package installation is required by the privacy changes.
+`lg-tv` is **your own SSH alias**, not a built-in IP address. No command knows or guesses your TV's address. Linux/macOS are the documented POSIX host paths; Windows via WSL is the documented path for private files and writes. The host CLI uses Python's standard library and OpenSSH; the TV uses its existing tools and Python 2.7. No TV package installation is required by the privacy changes.
 
 Writes require an owner-controlled **exclusive administration window**. Native setters have no atomic compare-and-set; readback checks are not transaction isolation. Automatic checkpoint rollback is deliberately same-boot only. See [recovery](docs/recovery.md) rather than bypassing these limits.
 
@@ -49,10 +51,17 @@ The [separate optional module](optional-preview/README.md) generates a tiny prod
 
 - No guarantee of “zero spying”, “all ads removed”, microphone silence or a fully trusted rooted device. An active voice-related process is not proof of recording.
 - DNS filtering cannot stop every direct-IP, IPv6 or encrypted-DNS path, and does not isolate devices on the same LAN. It does not reliably remove YouTube in-video ads.
-- No blanket disabling of `sdx`, `admanager` or `voiceconductor`; no replacement of binaries with `/dev/null`.
+- No blanket disabling of `sdx`, `admanager` or `voiceconductor`; no replacement of binaries with `/dev/null`. Breaking the tested CX's SDX authentication dependency left Home visible but unable to launch apps (`ServiceDown` in diagnostics). An active `voiceconductor` is not evidence of recording. [Why these services stay and how to recover](docs/services.md#why-sdx-admanager-and-voiceconductor-stay).
 - No consent/EULA mass edits. On this CX the native withdrawal workflow can revoke SDX terms and reboot; it was investigated but **not executed**.
 - No router firmware changes, whole-house DNS change, firewall installation, automatic firmware update, exploit execution or factory reset.
 - The original changes were read back and selected UI/network checks passed. **Full streaming playback regression and a physical cold boot were not performed.** Public packaging/refactoring tests are distinct from those device observations. [Validation record](docs/validation.md)
+- A later read-only post-start check found the masks, DNS and owned preview overlays still present, but **HbbTV read back as `"on"`**. Boot identity had not changed, so that observation does not establish physical cold-boot persistence or the cause of the HbbTV change. No automatic reapply was performed. [Sanitized post-start evidence](assets/evidence/post-start-verification.json)
+
+## Privacy coverage at a glance
+
+- `collection` means watched-list collection plus HbbTV device ID, **not ACR**. ACR/Live Plus, ad cookie and voice settings are separate opt-in settings; see `python3 tvctl.py --list-features` for exact keys/groups.
+- Settings readback, service masks, optional Home cosmetics and DNS filtering cover different paths. None establishes full telemetry blocking, microphone isolation, LAN isolation or video playback.
+- [Full privacy matrix: changed / observed / not covered / verify manually](docs/privacy-matrix.md).
 
 ## Let an agent help
 

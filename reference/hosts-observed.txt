@@ -22,7 +22,7 @@
 127.0.0.1 lgads.tv
 127.0.0.1 lgtviot.com
 127.0.0.1 lgvoiceweb.qun7.com
-127.0.0.1 localhost.localdomain
+# A generic localhost alias was omitted: local resolver plumbing is not a tracking redirect.
 127.0.0.1 nextlgsdp.com
 127.0.0.1 nsu.lge.com
 127.0.0.1 nudge.lgtvsdp.com

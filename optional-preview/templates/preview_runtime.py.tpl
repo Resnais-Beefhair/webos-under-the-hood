@@ -94,11 +94,25 @@ def _validate_package():
 
 def _targets():
     pairs = [(UI, os.path.join(BASE, "Interfaces.patched.qml"))]
+    missing = []
     for target in CHECKPOINTS:
-        if os.path.lexists(target):
-            if os.path.islink(target) or not os.path.isdir(target):
-                raise RuntimeError("Home checkpoint target is not a real directory: %s" % target)
-            pairs.append((target, os.path.join(BASE, "empty-checkpoint")))
+        if not os.path.lexists(target):
+            missing.append(target)
+            continue
+        if os.path.islink(target) or not os.path.isdir(target):
+            raise RuntimeError("Home checkpoint target is not a real directory: %s" % target)
+        pairs.append((target, os.path.join(BASE, "empty-checkpoint")))
+    if missing:
+        states = []
+        for target in CHECKPOINTS:
+            if target in missing:
+                state = "missing"
+            else:
+                state = mount_state(os.path.join(BASE, "empty-checkpoint"), target)
+            states.append("%s=%s" % (target, state))
+        ui_state = mount_state(os.path.join(BASE, "Interfaces.patched.qml"), UI)
+        raise RuntimeError("required Home checkpoint directory missing: %s; mount states: UI=%s; %s" %
+                           (", ".join(missing), ui_state, "; ".join(states)))
     return pairs
 
 
@@ -122,18 +136,23 @@ def inspect():
 
 
 def _cleanup_new_mount(target, source):
-    """Best-effort ordinary detach for a mount created during this invocation."""
+    """Detach only a still-present, exact, read-only mount created here."""
     rows = _mount_rows()
     exact = [row for row in rows if len(row) >= 4 and row[1] == target]
     nested = [row for row in rows if len(row) >= 4 and row[1].startswith(target.rstrip("/") + "/")]
+    if not exact:
+        return False
     if len(exact) != 1 or nested or not _same_inode(source, target):
         raise RuntimeError("new mount cannot be proven ours during cleanup: %s" % target)
+    if mount_state(source, target, rows) != "owned":
+        raise RuntimeError("new mount is not an exact read-only owned bind during cleanup: %s" % target)
     subprocess.check_call(["umount", target])
     if any(row[1] == target for row in _mount_rows()):
         raise RuntimeError("new mount remains after cleanup: %s" % target)
+    return True
 
 
-def apply_mounts():
+def apply_mounts(on_mount_created=None):
     plan = inspect()  # Refuse every foreign condition before changing any target.
     new_mounts = []
     changed = 0
@@ -145,6 +164,8 @@ def apply_mounts():
                 raise RuntimeError("mount state changed during preflight: %s" % target)
             subprocess.check_call(["mount", "--bind", source, target])
             new_mounts.append((target, source))
+            if on_mount_created is not None:
+                on_mount_created(target, source)
             subprocess.check_call(["mount", "-o", "remount,bind,ro", target])
             if mount_state(source, target) != "owned":
                 raise RuntimeError("bind did not become the exact read-only owned mount: %s" % target)
@@ -179,12 +200,34 @@ def main(argv=None):
         return 2
     try:
         require_root()
-        changed = apply_mounts()
+        created = []
+        changed = apply_mounts(on_mount_created=lambda target, source: created.append((target, source)))
         if argv[0] == "--boot" and changed:
             # A process restored from CRIU may retain the old code after mounts.
             # Installing this boot hook explicitly approves this Home-only reload.
-            subprocess.check_call([sys.executable, os.path.join(BASE, "reload_home.py"),
-                                   "--hidden", "--ack-home-reload"])
+            reload_script = os.path.join(BASE, "reload_home.py")
+            try:
+                subprocess.check_call([sys.executable, reload_script,
+                                       "--hidden", "--ack-home-reload"])
+            except Exception as reload_error:
+                cleanup_errors = []
+                for target, source in reversed(created):
+                    try:
+                        _cleanup_new_mount(target, source)
+                    except Exception as cleanup_error:
+                        cleanup_errors.append("%s: %s" % (target, cleanup_error))
+                recovery = [sys.executable, reload_script, "--visible",
+                            "--allow-original-snapshot", "--ack-home-reload"]
+                try:
+                    subprocess.check_call(recovery)
+                    recovery_result = "original-snapshot Home recovery was attempted"
+                except Exception as recovery_error:
+                    recovery_result = "Home recovery attempt failed: %s" % recovery_error
+                if cleanup_errors:
+                    raise RuntimeError("boot reload failed: %s; mount cleanup incomplete: %s; %s" %
+                                       (reload_error, "; ".join(cleanup_errors), recovery_result))
+                raise RuntimeError("boot reload failed: %s; invocation-created mounts were cleaned; %s" %
+                                   (reload_error, recovery_result))
         print("Home preview mounts ready; changed=%d; boot_reload=%s" %
               (changed, str(argv[0] == "--boot" and bool(changed)).lower()))
         return 0

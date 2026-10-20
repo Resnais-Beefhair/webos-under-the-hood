@@ -2,7 +2,7 @@
 
 This feature stops **voiceinput** and preserves the existing **contentminer** mask. Voice input may stop working. Get the owner's approval, read [compatibility](compatibility.md), keep working SSH, and capture the current state first. Do not infer that every audio/recording path is covered.
 
-The included shell payload is adapted from the source-device-tested hook. Its no-argument mode refuses; only `--apply-services` enables writes. The boot wrapper pins the exact tested `/etc/version` build. The public entry-point changes and these installation instructions were tested offline, not reinstalled on the running source TV.
+The included shell payload is adapted from the source-device-tested hook. Its no-argument mode refuses; `--check` is read-only and only `--apply-services` enables writes. Both modes pin the exact tested `/etc/version` build and validate layer ownership. The public `--check` was exercised on the source TV without installing/replacing its hook; public apply/install paths remain offline-tested, not reinstalled on that TV.
 
 ## 1. Read-only preflight and checkpoint
 
@@ -12,6 +12,7 @@ chmod 700 .local-state
 python3 tvctl.py --target lg-tv audit --output .local-state/before-services.json
 ssh lg-tv 'systemctl show voiceinput.service contentminer.service -p LoadState -p ActiveState -p UnitFileState'
 ssh lg-tv 'cat /etc/version'
+ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes lg-tv 'sh -s -- --check' < services/privacy-services.sh
 ssh lg-tv 'python -' <<'PY'
 import os
 p = "/etc/systemd/system/voiceinput.service"
@@ -20,7 +21,9 @@ print([x.strip() for x in open("/proc/mounts") if x.split()[1] == p])
 PY
 ```
 
-The expected unit is an existing regular file, **not** a foreign symlink/mount. If any bind already covers that exact unit, or an old privacy hook exists, stop and inspect the existing implementation instead of stacking another one. In the source setup `contentminer` was already masked/inactive; it was not unmasked as a “reset”.
+The expected unmasked unit is an existing regular file, **not** a foreign symlink/mount. Its SHA-256 must be `53775553d67b86f7d826f1f0ab48eb9974de12b6602e5e5841de176aa03c0b63`, pinned from the privately preserved original unit on the tested build; vendor unit contents are not redistributed. A different unit on the same build refuses before either service is stopped. With an already-installed exact `/dev/null` bind, the original digest is hidden: the checker instead verifies a single bind and exact target/source inode identity, and reports that it cannot read the underlying unit hash. It never pretends `/dev/null` is the original firmware file.
+
+`--check` creates no log or lock, mount, service change or hook file. A successful check means the proposed layers are eligible, **not** that masks have been applied; current manager states are reported separately. If any old hook or bind exists, inspect the implementation and your saved ownership records instead of stacking another one. In the source setup `contentminer` was already masked/inactive; it was not unmasked as a “reset”.
 
 Capture the runtime links and unit digest privately, with no-overwrite output:
 
@@ -84,6 +87,18 @@ ssh lg-tv 'systemctl show voiceinput.service contentminer.service -p LoadState -
 Require **both** `LoadState=masked` and `ActiveState=inactive`. The voice unit's `/dev/null` bind corrects the `/etc` precedence problem; the hook does not overwrite the firmware unit or the executable. Repeat the hook only to test idempotence in an approved window; the exact voice-unit mount count must stay one. Keep `sdx`, `admanager` and `voiceconductor` intact and compare your audit invariants.
 
 Do not use `systemctl start voiceinput` as a casual test. The source implementation tried it only **after** proving the unit was effectively masked and checked that starting was refused. An incorrect mask could otherwise turn input back on.
+
+## Why SDX, admanager and voiceconductor stay
+
+On the tested CX, making SDX unavailable broke the Home authentication/launch path: `getDeviceAuthenticationStatus` could not supply the needed state, launchpoint population or app launches failed, and Home could remain visible but unable to start applications. Private read-only diagnostics recorded `ServiceDown`; the native Home launch path uses `launchCMPApp`. This is an observed source-device dependency failure, not a claim that every firmware uses an identical path or that a service must be continuously active in systemd.
+
+Preserve SDX/admanager and their original executables; do not mask/null them as a “debloat” shortcut. Keep `voiceconductor` intact too: an active voice coordinator alone is **not evidence of microphone recording**. It is different from the deliberately masked `voiceinput` unit.
+
+If a prior experiment broke app launching, restore the **exact changed** hooks/units/binaries from its verified checkpoint first, then read SDX's native authentication status. Do not indiscriminately start/unmask every service: some Luna services are demand-started. If the original dependency state is restored but Home remains unusable, use the [explicitly approved Home-only recovery](recovery.md#failure-playbook-optional-home-reload-fails). A power cycle is a separate owner-controlled last resort, not a toolkit fallback. This maintenance release does not reproduce that failure on the running TV.
+
+### Why the voice unit needs this exact bind
+
+The [systemd unit load-path rules](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html) place `/etc/systemd/system` ahead of `/run/systemd/system`. A runtime symlink alone therefore did not protect the existing regular `/etc` voice unit. In the source-device readback, voiceinput's `FragmentPath` remained `/etc/systemd/system/voiceinput.service` under the verified `/dev/null` bind, while contentminer's was `/dev/null` through its runtime mask; **both** reported `LoadState=masked` and `ActiveState=inactive`. These different fragment paths are not contradictory. The hook verifies effective manager state and exact mount identity rather than treating a successful `systemctl mask` exit as proof.
 
 ## Rollback without enabling collection behind your back
 

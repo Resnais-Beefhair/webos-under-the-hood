@@ -15,6 +15,9 @@ from pathlib import Path
 p=Path(os.environ['FAKE_STATE']); s=json.loads(p.read_text())
 args=sys.argv[1:]; tool=Path(sys.argv[0]).name
 if tool=='id': print(0); sys.exit(0)
+if tool=='sha256sum':
+    print(('0'*64 if s['scenario']=='hashmismatch' else '53775553d67b86f7d826f1f0ab48eb9974de12b6602e5e5841de176aa03c0b63')+'  '+args[-1])
+    sys.exit(0)
 if tool=='stat':
     print('foreign' if s['scenario']=='foreignmount' and args[-1]!='/dev/null' else 'owned-null')
     sys.exit(0)
@@ -40,8 +43,9 @@ else: raise RuntimeError(args)
 p.write_text(json.dumps(s))
 '''
 
+@unittest.skipUnless(os.name == 'posix', 'TV shell-hook tests require POSIX; use WSL on Windows')
 class HookTests(unittest.TestCase):
-    def run_case(self,scenario='normal',repeat=False,missing=False,version='20260421173614',foreign_link=False,locked=False):
+    def run_case(self,scenario='normal',repeat=False,missing=False,version='20260421173614',foreign_link=False,locked=False,check=False):
         with tempfile.TemporaryDirectory() as name:
             root=Path(name); (root/'bin').mkdir(); (root/'units').mkdir(); (root/'base').mkdir()
             if not missing: (root/'units/voiceinput.service').write_text('[Service]\nExecStart=/usr/sbin/voiceinput\n')
@@ -57,18 +61,42 @@ class HookTests(unittest.TestCase):
                 row='foreign '+str(root/'units/voiceinput.service')+' ext4 rw 0 0\n'
                 (root/'mounts').write_text(row*(2 if scenario=='stacked' else 1))
             (root/'state').write_text(json.dumps({'scenario':scenario,'mount_calls':0,'voice_masked':False}))
-            for tool in ('systemctl','mount','id','stat'):
+            for tool in ('systemctl','mount','id','stat','sha256sum'):
                 p=root/'bin'/tool; p.write_text(FAKE.replace('PYTHON',sys.executable)); p.chmod(0o755)
             env=dict(os.environ,PATH=str(root/'bin')+':'+os.environ['PATH'],
                      FAKE_STATE=str(root/'state'),WEBOS_PRIVACY_BASE=str(root/'base'),
                      WEBOS_PRIVACY_UNITDIR=str(root/'units'),WEBOS_PRIVACY_MOUNTS=str(root/'mounts'),
                      WEBOS_PRIVACY_VERSIONFILE=str(root/'version'),WEBOS_PRIVACY_RUNDIR=str(root/'run'))
-            result=subprocess.run(['sh',str(HOOK),'--apply-services'],env=env,capture_output=True,text=True)
+            result=subprocess.run(['sh',str(HOOK),'--check' if check else '--apply-services'],env=env,capture_output=True,text=True)
             if repeat and result.returncode==0:
                 result=subprocess.run(['sh',str(HOOK),'--apply-services'],env=env,capture_output=True,text=True)
             state=json.loads((root/'state').read_text())
             state['lock_left']=(root/'run/.privacy-services.lock').exists()
-            return result,state,(root/'base/privacy.log').read_text()
+            return result,state,(root/'base/privacy.log').read_text() if (root/'base/privacy.log').exists() else ''
+    def test_unknown_unit_hash_refuses_before_service_changes(self):
+        r,s,log=self.run_case('hashmismatch')
+        self.assertNotEqual(r.returncode,0)
+        self.assertEqual(s.get('systemctl_calls',[]),[])
+        self.assertEqual(s['mount_calls'],0)
+        self.assertIn('hash',r.stderr)
+    def test_check_is_read_only_and_reports_plan(self):
+        r,s,log=self.run_case(check=True)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(log,'')
+        self.assertFalse(s['lock_left'])
+        self.assertEqual(s['mount_calls'],0)
+        self.assertFalse(any(c[0] in ('stop','mask','daemon-reload') for c in s.get('systemctl_calls',[])))
+        self.assertIn('read-only',r.stdout)
+        self.assertIn('sha256',r.stdout)
+    def test_bad_check_is_read_only_and_refuses(self):
+        for kwargs in ({'scenario':'hashmismatch'}, {'scenario':'foreignmount'}, {'foreign_link':True}, {'version':'wrong'}):
+            with self.subTest(kwargs=kwargs):
+                r,s,log=self.run_case(check=True,**kwargs)
+                self.assertNotEqual(r.returncode,0)
+                self.assertEqual(log,'')
+                self.assertFalse(s['lock_left'])
+                self.assertEqual(s['mount_calls'],0)
+                self.assertFalse(any(c[0] in ('stop','mask','daemon-reload') for c in s.get('systemctl_calls',[])))
     def test_no_argument_is_not_an_apply(self):
         r=subprocess.run(['sh',str(HOOK)],capture_output=True,text=True)
         self.assertEqual(r.returncode,2)

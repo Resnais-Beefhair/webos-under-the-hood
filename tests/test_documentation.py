@@ -1,5 +1,6 @@
 """Check pasted shell recipes without executing a command or contacting a TV."""
 import re
+import os
 import shlex
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(shutil.which("sh"), "POSIX shell syntax checks need sh")
+@unittest.skipUnless(os.name == "posix" and shutil.which("sh"), "POSIX shell recipes need POSIX/WSL and sh")
 class DocumentationTests(unittest.TestCase):
     def test_shell_blocks_and_embedded_ssh_commands_parse(self):
         paths = [ROOT / "README.md", *ROOT.glob("docs/*.md"), ROOT / "optional-preview/README.md"]
@@ -41,8 +42,18 @@ class DocumentationTests(unittest.TestCase):
                             self.assertEqual(len(args), 3, "Python payload lost quoting")
                             compile(args[2], "<documented remote Python>", "exec")
 
+class ConnectionDocumentationTests(unittest.TestCase):
+    def test_historical_hosts_reference_does_not_present_localhost_as_tracking(self):
+        reference = ROOT / "reference" / "hosts-observed.txt"
+        rows = [line.split() for line in reference.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")]
+        self.assertTrue(rows)
+        self.assertTrue(all(len(row) == 2 and "localhost" not in row[1] for row in rows))
+        provenance = (ROOT / "reference" / "README.md").read_text(encoding="utf-8")
+        self.assertIn(str(len(rows)) + " selected exact-name redirects", provenance)
+
     def test_interactive_public_key_paste_is_not_a_command_block(self):
-        text = (ROOT / "docs/connection.md").read_text()
+        text = (ROOT / "docs/connection.md").read_text(encoding="utf-8")
         self.assertIn('cat >> /home/root/.ssh/authorized_keys\n```', text)
         self.assertNotRegex(text, r"cat >>[^`]+chmod 600")
 
@@ -55,7 +66,7 @@ class ServiceRecoveryRecipeTests(unittest.TestCase):
         import types
         from contextlib import redirect_stdout
         from unittest.mock import Mock, patch
-        text = (ROOT / "docs/services.md").read_text()
+        text = (ROOT / "docs/services.md").read_text(encoding="utf-8")
         scripts = re.findall(r"<<'PY'\n(.*?)\nPY", text, re.S)
         source = next(code for code in scripts if 'Owned startup hook disabled' in code)
         base = "/var/lib/webosbrew/privacy-services"
