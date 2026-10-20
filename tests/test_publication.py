@@ -1,6 +1,7 @@
 """Pure synthetic scanner inputs; no real credentials or device addresses."""
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -44,7 +45,7 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(result.returncode,1,result.stderr)
             self.assertTrue(any(x.startswith('index:fixture.txt:') for x in json.loads(result.stdout)['issues']))
 
-    @unittest.skipUnless(shutil.which('git'), 'Git index tests need git')
+    @unittest.skipUnless(os.name == 'posix' and shutil.which('git'), 'Symlink-index test needs POSIX/WSL and git')
     def test_directory_symlink_in_release_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

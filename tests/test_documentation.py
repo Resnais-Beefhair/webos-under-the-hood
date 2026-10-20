@@ -43,6 +43,15 @@ class DocumentationTests(unittest.TestCase):
                             compile(args[2], "<documented remote Python>", "exec")
 
 class ConnectionDocumentationTests(unittest.TestCase):
+    def test_historical_hosts_reference_does_not_present_localhost_as_tracking(self):
+        reference = ROOT / "reference" / "hosts-observed.txt"
+        rows = [line.split() for line in reference.read_text().splitlines()
+                if line.strip() and not line.lstrip().startswith("#")]
+        self.assertTrue(rows)
+        self.assertTrue(all(len(row) == 2 and "localhost" not in row[1] for row in rows))
+        provenance = (ROOT / "reference" / "README.md").read_text()
+        self.assertIn(str(len(rows)) + " selected exact-name redirects", provenance)
+
     def test_interactive_public_key_paste_is_not_a_command_block(self):
         text = (ROOT / "docs/connection.md").read_text()
         self.assertIn('cat >> /home/root/.ssh/authorized_keys\n```', text)

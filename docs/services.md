@@ -88,6 +88,18 @@ Require **both** `LoadState=masked` and `ActiveState=inactive`. The voice unit's
 
 Do not use `systemctl start voiceinput` as a casual test. The source implementation tried it only **after** proving the unit was effectively masked and checked that starting was refused. An incorrect mask could otherwise turn input back on.
 
+## Why SDX, admanager and voiceconductor stay
+
+On the tested CX, making SDX unavailable broke the Home authentication/launch path: `getDeviceAuthenticationStatus` could not supply the needed state, launchpoint population or app launches failed, and Home could remain visible but unable to start applications. Private read-only diagnostics recorded `ServiceDown`; the native Home launch path uses `launchCMPApp`. This is an observed source-device dependency failure, not a claim that every firmware uses an identical path or that a service must be continuously active in systemd.
+
+Preserve SDX/admanager and their original executables; do not mask/null them as a “debloat” shortcut. Keep `voiceconductor` intact too: an active voice coordinator alone is **not evidence of microphone recording**. It is different from the deliberately masked `voiceinput` unit.
+
+If a prior experiment broke app launching, restore the **exact changed** hooks/units/binaries from its verified checkpoint first, then read SDX's native authentication status. Do not indiscriminately start/unmask every service: some Luna services are demand-started. If the original dependency state is restored but Home remains unusable, use the [explicitly approved Home-only recovery](recovery.md#failure-playbook-optional-home-reload-fails). A power cycle is a separate owner-controlled last resort, not a toolkit fallback. This maintenance release does not reproduce that failure on the running TV.
+
+### Why the voice unit needs this exact bind
+
+The [systemd unit load-path rules](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html) place `/etc/systemd/system` ahead of `/run/systemd/system`. A runtime symlink alone therefore did not protect the existing regular `/etc` voice unit. In the source-device readback, voiceinput's `FragmentPath` remained `/etc/systemd/system/voiceinput.service` under the verified `/dev/null` bind, while contentminer's was `/dev/null` through its runtime mask; **both** reported `LoadState=masked` and `ActiveState=inactive`. These different fragment paths are not contradictory. The hook verifies effective manager state and exact mount identity rather than treating a successful `systemctl mask` exit as proof.
+
 ## Rollback without enabling collection behind your back
 
 First stop future reapplication by moving only the exact hook you installed into its own private directory, after comparing bytes/inode with your payload. Do not remove a different hook. Then detach only the exact `/dev/null` bind over `/etc/systemd/system/voiceinput.service` after checking a single mount, no nested mounts, and the target/source device+inode identity. Do not unmount storage or force a foreign mount. Run `systemctl daemon-reload` afterward, **not a service-manager restart**.

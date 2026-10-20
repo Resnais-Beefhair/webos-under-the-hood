@@ -49,6 +49,12 @@ These checks are **not transaction isolation**. Arrange an exclusive administrat
 
 Use the [module's rollback](../optional-preview/README.md#rollback). It removes only its exact owned hook/mounts; it keeps the source files and empty checkpoint placeholder. Restoring the visible firmware file does not replace code already mapped into Home, so an explicitly approved Home-only reload is a separate step. No SAM restart, snapshot deletion, reboot or package-directory deletion is part of recovery.
 
+## If Home is visible but no apps launch
+
+Do not assume another ad or telemetry process must be disabled. On the tested CX, breaking the SDX/admanager authentication dependency produced an unusable launcher, with `ServiceDown` in diagnostics, even while Home could remain visible. [Why these services stay, native launch path and observed fragment paths](services.md#why-sdx-admanager-and-voiceconductor-stay).
+
+Restore only the exact changes from the experiment's own checkpoint. Preserve `sdx`, `admanager`, `voiceconductor` and original binaries; an active `voiceconductor` is not proof of recording. Confirm the native SDX authentication readback, then decide separately whether a Home-only reload is required. Do not use a SAM restart or broad service start/unmask as a diagnostic probe.
+
 ## Failure playbook: streaming breaks after DNS
 
 Stop applying further features. Keep your working pinned SSH session and checkpoint. A DNS response or successful ConnMan readback is not proof that a particular streaming provider works.
@@ -93,7 +99,7 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/rollback_
 Inspect the result. Only after successful layer restoration and a **separate Home-only reload decision**, the next command requests the original firmware presentation, allowing its original Home snapshot behavior:
 
 ```sh
-ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/reload_home.py' --hidden --allow-original-snapshot --ack-home-reload"
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/reload_home.py' --visible --allow-original-snapshot --ack-home-reload"
 ```
 
 Do not start the patched reload without all required owned read-only mounts. If this recovery also fails, stop and preserve evidence; do not restart SAM, delete CRIU state, escalate to KILL or reboot as an undocumented fallback. After any lazy detach, keep the source/empty-placeholder files while existing processes may retain their file descriptors. [Module-specific failure handling](../optional-preview/README.md)

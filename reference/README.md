@@ -1,6 +1,6 @@
 # Historical hosts reference: provenance and omissions
 
-[hosts-observed.txt](hosts-observed.txt) is a deliberately partial, historical transcription of selected exact-name redirects observed on the source TV. Its 45 data rows are **not 45 proven trackers**: the list also contains a generic localhost alias. It is neither a maintained blocklist nor an installer.
+[hosts-observed.txt](hosts-observed.txt) is a deliberately partial, historical transcription of 44 selected exact-name redirects observed on the source TV. They are **not 44 proven trackers**. The generic localhost alias was removed from the data rows because resolver plumbing is not a tracking domain. This is neither a maintained blocklist nor an installer.
 
 ## What was left out
 
