@@ -59,6 +59,8 @@ These binary-safe SSH stdin transfers do not require an SFTP server or modern SC
 
 These are separate steps. Check-only commands do not mount or reload Home. The reload preflight reads Home's running-app state and native schemas but does not establish activation. Read-only/no-action helper imports suppress bytecode writes too.
 
+Arrange an owner-controlled exclusive administration window for mounts, hook changes, reload and rollback: no concurrent root mount writer or competing toolkit run. Ownership checks use exact target, source inode and read-only state, not an atomic mount-instance token; they cannot distinguish a same-inode mount replaced by another root writer between check and detach. Stop on observed drift rather than treating preflight as transaction isolation.
+
 ```sh
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
   "python '$BASE/preview_runtime.py' --check"
