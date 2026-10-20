@@ -17,7 +17,7 @@ import sys
 from typing import Any, Mapping, Optional, Sequence, Union
 
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 MODEL = "LG OLED65CX6LA"
 FIRMWARE = "04.64.00"
 WEBOS_RELEASE = "5.6.2"

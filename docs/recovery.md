@@ -49,6 +49,12 @@ These checks are **not transaction isolation**. Arrange an exclusive administrat
 
 Use the [module's rollback](../optional-preview/README.md#rollback). It removes only its exact owned hook/mounts; it keeps the source files and empty checkpoint placeholder. Restoring the visible firmware file does not replace code already mapped into Home, so an explicitly approved Home-only reload is a separate step. No SAM restart, snapshot deletion, reboot or package-directory deletion is part of recovery.
 
+## Optional screensaver replacement
+
+Use only the [screensaver module's own rollback and recovery procedure](../optional-screensaver/README.md). Disable its exact owned boot hook before detaching only its verified owned overlays. Keep the checkpoint, generated source and backups. Do not remove foreign or stacked mounts, force-unmount, change picture settings or touch Home-preview overlays to recover a screensaver.
+
+Restoring the underlying files does not evict QML already mapped into a running application. A separately approved **screensaver-only** native reload is required to verify the original visual. Mount restoration and visible restoration are different results. No SAM restart, snapshot deletion, other app closure, reboot or firmware write is part of this procedure. If native launch fails, stop with the explicit recovery command and private evidence rather than escalating to broader process kills.
+
 ## If Home is visible but no apps launch
 
 Do not assume another ad or telemetry process must be disabled. On the tested CX, breaking the SDX/admanager authentication dependency produced an unusable launcher, with `ServiceDown` in diagnostics, even while Home could remain visible. [Why these services stay, native launch path and observed fragment paths](services.md#why-sdx-admanager-and-voiceconductor-stay).

@@ -35,4 +35,4 @@ python3 tools/render_gallery.py
 # Or: python3 tools/render_gallery.py --font-directory /path/to/dejavu-fonts
 ```
 
-Font files and TV firmware are not bundled. Full TV captures were deliberately excluded because recommendation cards and ongoing playback can reveal personal viewing. The GitHub-visible gallery shows machine internals instead.
+Font files and TV firmware are not bundled. Playback and recommendation captures remain excluded because they can reveal personal viewing. The separate [screensaver before/after gallery](screensavers.md) contains only manually reviewed, screensaver-only captures and sanitized provenance; it is an experimental visual record, not a released installer.

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @unittest.skipUnless(os.name == "posix" and shutil.which("sh"), "POSIX shell recipes need POSIX/WSL and sh")
 class DocumentationTests(unittest.TestCase):
     def test_shell_blocks_and_embedded_ssh_commands_parse(self):
-        paths = [ROOT / "README.md", *ROOT.glob("docs/*.md"), ROOT / "optional-preview/README.md"]
+        paths = [ROOT / "README.md", *ROOT.glob("docs/*.md"), ROOT / "optional-preview/README.md", ROOT / "optional-screensaver/README.md"]
         for path in paths:
             text = path.read_text(encoding="utf-8")
             for index, block in enumerate(re.findall(r"```sh\n(.*?)```", text, re.S)):
@@ -43,6 +43,43 @@ class DocumentationTests(unittest.TestCase):
                             compile(args[2], "<documented remote Python>", "exec")
 
 class ConnectionDocumentationTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("sh"), "POSIX SSH shell recipe")
+    def test_screensaver_check_recipe_defines_its_base_before_use(self):
+        text = (ROOT / "optional-screensaver/README.md").read_text(encoding="utf-8")
+        blocks = re.findall(r"```sh\n(.*?)```", text, re.S)
+        check = next(block for block in blocks if 'overlay_runtime.py' in block and '--check' in block)
+        # Exercise the literal first readback block with nounset and a local-only
+        # SSH function. No network, device helper or actual SSH process is used.
+        setup = ("TV=synthetic-tv\n"
+                 "ssh() { while [ \"$#\" -gt 1 ]; do shift; done; printf '%s\\n' \"$1\"; }\n")
+        result = subprocess.run(["sh", "-eu", "-c", setup + check], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        base = "/var/lib/webosbrew/screensaver-override/"
+        actual = [shlex.split(line) for line in result.stdout.splitlines()]
+        self.assertEqual(actual, [["python", base + "overlay_runtime.py", "--check"],
+                                  ["python", base + "manage_boot_hook.py", "--check"]])
+
+    def test_screensaver_hash_recipe_uses_only_host_python_and_private_fixtures(self):
+        import hashlib
+        import sys
+        import tempfile
+        text = (ROOT / "optional-screensaver/README.md").read_text(encoding="utf-8")
+        source = re.search(r"python3 - \"\$OUT\" <<'PY'\n(.*?)\nPY", text, re.S).group(1)
+        names = ("ScreenSaver.original.qml", "ScreenSaver.patched.qml",
+                 "MainView.original.qml", "MainView.patched.qml")
+        with tempfile.TemporaryDirectory(prefix="hermes-verify-screensaver-") as temp:
+            base = Path(temp)
+            expected = {}
+            for name in names:
+                data = ("Synthetic fixture only: " + name).encode("ascii")
+                (base / name).write_bytes(data)
+                expected[name] = hashlib.sha256(data).hexdigest()
+            result = subprocess.run([sys.executable, "-", str(base)], input=source,
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        actual = {line.split()[1]: line.split()[0] for line in result.stdout.splitlines()}
+        self.assertEqual(actual, expected)
+
     def test_historical_hosts_reference_does_not_present_localhost_as_tracking(self):
         reference = ROOT / "reference" / "hosts-observed.txt"
         rows = [line.split() for line in reference.read_text(encoding="utf-8").splitlines()
@@ -52,10 +89,11 @@ class ConnectionDocumentationTests(unittest.TestCase):
         provenance = (ROOT / "reference" / "README.md").read_text(encoding="utf-8")
         self.assertIn(str(len(rows)) + " selected exact-name redirects", provenance)
 
-    def test_interactive_public_key_paste_is_not_a_command_block(self):
+    def test_public_key_bootstrap_avoids_long_interactive_pastes(self):
         text = (ROOT / "docs/connection.md").read_text(encoding="utf-8")
-        self.assertIn('cat >> /home/root/.ssh/authorized_keys\n```', text)
-        self.assertNotRegex(text, r"cat >>[^`]+chmod 600")
+        self.assertIn('Each generated line is at most 78 characters', text)
+        self.assertIn('generated short commands', text)
+        self.assertNotIn('cat >> /home/root/.ssh/authorized_keys', text)
 
 
 class ServiceRecoveryRecipeTests(unittest.TestCase):

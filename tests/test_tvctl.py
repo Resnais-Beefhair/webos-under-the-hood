@@ -235,14 +235,14 @@ class ParserAndTransportTests(unittest.TestCase):
         version = subprocess.run([sys.executable, str(entrypoint), "--version"],
                                  capture_output=True, text=True, timeout=5, check=False)
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertTrue(version.stdout.strip().startswith("tvctl 0.1.0"))
+        self.assertTrue(version.stdout.strip().startswith("tvctl 0.2.0"))
         self.assertIn(tvctl.MODEL, version.stdout)
         self.assertIn(tvctl.ETC_VERSION, version.stdout)
         listed = subprocess.run([sys.executable, str(entrypoint), "--list-features"],
                                 capture_output=True, text=True, timeout=5, check=False)
         self.assertEqual(listed.returncode, 0, listed.stderr)
         catalog = json.loads(listed.stdout)
-        self.assertEqual(catalog["version"], "0.1.0")
+        self.assertEqual(catalog["version"], "0.2.0")
         self.assertEqual({feature["name"] for feature in catalog["covered"]},
                          {"collection", "hbbtv", "updates", "acr", "advertising", "voice"})
         keys = {(item["category"], item["key"], item["requested_value"])
@@ -300,7 +300,7 @@ class SafetyAndMutationTests(unittest.TestCase):
         self.assertNotIn(SERVICE, encoded)
         self.assertNotIn("IPv4.Address", encoded)
         self.assertEqual(result["ethernet_dns"]["stored_nameservers"], ["192.0.2.53"])
-        self.assertEqual(result["version"], "0.1.0")
+        self.assertEqual(result["version"], "0.2.0")
         self.assertEqual(result["services"]["voiceinput.service"]["ActiveState"], "inactive")
         self.assertEqual(result["services"]["voiceconductor.service"]["ActiveState"], "active")
         qml = tvctl.AUDIT_MOUNT_TARGETS[2]
