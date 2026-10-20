@@ -17,6 +17,7 @@ import sys
 from typing import Any, Mapping, Optional, Sequence, Union
 
 
+__version__ = "0.1.0"
 MODEL = "LG OLED65CX6LA"
 FIRMWARE = "04.64.00"
 WEBOS_RELEASE = "5.6.2"
@@ -24,19 +25,32 @@ WEBOS_BUILD_ID = "21"
 WEBOS_VERSION = WEBOS_RELEASE + "-" + WEBOS_BUILD_ID
 ETC_VERSION = "20260421173614"
 
-FEATURES: dict[str, tuple[str, dict[str, str]]] = {
-    "collection": ("option", {"watchedListCollection": "off", "hbbTvDeviceId": "off"}),
-    "hbbtv": ("option", {"hbbTV": "off"}),
-    "updates": ("support", {"automaticUpdate": "off"}),
+FEATURES: dict[str, dict[str, dict[str, str]]] = {
+    "collection": {"option": {"watchedListCollection": "off", "hbbTvDeviceId": "off"}},
+    "hbbtv": {"option": {"hbbTV": "off"}},
+    "updates": {"support": {"automaticUpdate": "off"}},
+    "acr": {"option": {"livePlus": "off"}},
+    "advertising": {"general": {"adCookie": "off"}},
+    "voice": {"option": {"turnOnByVoice": "off"},
+              "general": {"voiceLongDistance": "off"}},
+}
+FEATURE_DESCRIPTIONS = {
+    "collection": "Watched-list collection and HbbTV device ID",
+    "hbbtv": "HbbTV setting",
+    "updates": "Automatic-update preference",
+    "acr": "Live Plus / ACR setting",
+    "advertising": "Advertising cookie setting",
+    "voice": "Voice wake and long-distance voice settings",
 }
 OBSERVATIONS: dict[str, tuple[str, ...]] = {
     "option": ("livePlus", "turnOnByVoice"),
     "general": ("adCookie", "voiceLongDistance"),
 }
 ACTION_KEYS: dict[str, tuple[str, ...]] = {}
-for _feature_category, _feature_settings in FEATURES.values():
-    ACTION_KEYS.setdefault(_feature_category, ())
-    ACTION_KEYS[_feature_category] += tuple(_feature_settings)
+for _feature_categories in FEATURES.values():
+    for _feature_category, _feature_settings in _feature_categories.items():
+        ACTION_KEYS.setdefault(_feature_category, ())
+        ACTION_KEYS[_feature_category] += tuple(_feature_settings)
 ALL_SETTING_KEYS = {
     category: tuple(dict.fromkeys(ACTION_KEYS.get(category, ()) + OBSERVATIONS.get(category, ())))
     for category in ("option", "general", "support")
@@ -49,6 +63,24 @@ LUNA_METHODS = frozenset((
     "luna://com.webos.applicationManager/listLaunchPoints",
     "luna://com.webos.applicationManager/getForegroundAppInfo",
 ))
+DNS_PROBE_HOSTNAME = "example.com"
+DNS_PROBE_TIMEOUT = 12
+AUDIT_SERVICES = ("voiceinput.service", "contentminer.service", "voiceconductor.service")
+AUDIT_MOUNT_TARGETS = (
+    "/etc/hosts",
+    "/etc/systemd/system/voiceinput.service",
+    "/usr/palm/applications/com.webos.app.home/qml/Controllers/PreviewInterfaces/Interfaces.qml",
+    "/mnt/lg/cmn_data/checkpoint/com.webos.app.home",
+    "/tmp/checkpoint/com.webos.app.home",
+)
+AUDIT_HOOKS = (
+    ("50-privacy-services", "/var/lib/webosbrew/init.d/50-privacy-services"),
+    ("60-home-preview-override", "/var/lib/webosbrew/init.d/60-home-preview-override"),
+)
+AUDIT_BOOT_FLAGS = (
+    ("sshd_enabled", "/var/luna/preferences/webosbrew_sshd_enabled"),
+    ("normal_telnet_disabled", "/var/luna/preferences/webosbrew_telnet_disabled"),
+)
 
 
 COORDINATION_POLICY = {
@@ -77,13 +109,41 @@ def validate_target(value: str) -> str:
     raise argparse.ArgumentTypeError("target must be an SSH config alias, not an IP address")
 
 
+def feature_catalog() -> dict[str, Any]:
+    covered = []
+    for feature, categories in FEATURES.items():
+        covered.append({
+            "name": feature,
+            "description": FEATURE_DESCRIPTIONS[feature],
+            "settings": [
+                {"category": category, "key": key, "requested_value": value}
+                for category, settings in categories.items() for key, value in settings.items()
+            ],
+        })
+    action_keys = {category: set(keys) for category, keys in ACTION_KEYS.items()}
+    observed_only = [
+        {"category": category, "key": key}
+        for category, keys in OBSERVATIONS.items() for key in keys
+        if key not in action_keys.get(category, set())
+    ]
+    return {
+        "schema": 1,
+        "tool": "tvctl",
+        "version": __version__,
+        "target_profile": {"model": MODEL, "firmware": FIRMWARE, "webos": WEBOS_VERSION, "build": ETC_VERSION},
+        "covered": covered,
+        "observed_only": observed_only,
+        "not_covered": "All other settings and behaviors; no claim of comprehensive telemetry or network blocking.",
+    }
+
+
 def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
 def _private_parent(path: Path) -> None:
     if os.name != "posix":
-        raise TVCtlError("private state/checkpoint files require POSIX mode permissions")
+        raise TVCtlError("private state/checkpoint files require POSIX mode permissions; run this command in WSL, Linux, or macOS")
     parent = path.parent
     try:
         parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -355,9 +415,12 @@ class TVController:
                     raise TVCtlError("setting description enum contains an unknown value type")
                 allowed.append(item)
             for item in extended:
-                if not isinstance(item, dict) or not isinstance(item.get("value"), str):
+                if isinstance(item, str):
+                    allowed.append(item)
+                elif isinstance(item, dict) and isinstance(item.get("value"), str):
+                    allowed.append(item["value"])
+                else:
                     raise TVCtlError("setting description extended enum has an unknown schema")
-                allowed.append(item["value"])
             if not allowed or len(set(allowed)) != len(allowed):
                 raise TVCtlError("setting description enum is empty or ambiguous")
             enums[key] = allowed
@@ -452,10 +515,128 @@ class TVController:
             }
         return result
 
+    def _audit_service_states(self) -> dict[str, dict[str, str]]:
+        allowed = {
+            "LoadState": {"loaded", "masked", "masked-runtime", "not-found", "bad-setting", "error", "merged", "stub"},
+            "ActiveState": {"active", "inactive", "activating", "deactivating", "failed", "reloading", "unknown"},
+            "UnitFileState": {"enabled", "enabled-runtime", "linked", "linked-runtime", "masked", "masked-runtime",
+                              "static", "disabled", "indirect", "alias", "generated", "transient", "bad", "not-found"},
+        }
+        result: dict[str, dict[str, str]] = {}
+        for unit in AUDIT_SERVICES:
+            text = self.tv.run("systemctl show " + shlex.quote(unit)
+                               + " -p LoadState -p ActiveState -p UnitFileState", timeout=8)
+            values = parse_connman_properties(text)
+            if set(values) != set(allowed):
+                raise TVCtlError("service-state response has an unknown schema")
+            for key, value in values.items():
+                if value not in allowed[key]:
+                    raise TVCtlError("service-state response contains an unknown state")
+            result[unit] = values
+        return result
+
+    def _audit_mount_states(self) -> dict[str, dict[str, Any]]:
+        predicates = " || ".join('$2 == "%s"' % target for target in AUDIT_MOUNT_TARGETS)
+        awk = (predicates + ' { count = split($4, options, ","); mode = "unknown"; '
+               'for (i = 1; i <= count; i++) if (options[i] == "ro" || options[i] == "rw") mode = options[i]; '
+               'print $2, mode }')
+        text = self.tv.run("awk " + shlex.quote(awk) + " /proc/mounts", timeout=8)
+        modes: dict[str, list[str]] = {target: [] for target in AUDIT_MOUNT_TARGETS}
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) != 2 or parts[0] not in modes or parts[1] not in ("ro", "rw", "unknown"):
+                raise TVCtlError("mount-state response has an unknown schema")
+            modes[parts[0]].append(parts[1])
+        return {target: {"count": len(found), "modes": found}
+                for target, found in modes.items()}
+
+    def _audit_hbc_hooks(self) -> dict[str, dict[str, Optional[str]]]:
+        script = """import hashlib, os, stat
+hooks = %r
+for name, path in hooks:
+    try:
+        info = os.lstat(path)
+    except OSError:
+        print("%%s absent -" %% name)
+        continue
+    if not stat.S_ISREG(info.st_mode):
+        print("%%s non_regular -" %% name)
+        continue
+    if info.st_size > 262144:
+        print("%%s oversized -" %% name)
+        continue
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+            raise IOError()
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            block = os.read(fd, 8192)
+            if not block:
+                break
+            total += len(block)
+            if total > 262144:
+                raise IOError()
+            digest.update(block)
+        print("%%s regular %%s" %% (name, digest.hexdigest()))
+    except Exception:
+        print("%%s unreadable -" %% name)
+    finally:
+        if fd is not None:
+            os.close(fd)
+""" % (AUDIT_HOOKS,)
+        text = self.tv.run("python -c " + shlex.quote(script), timeout=8)
+        expected_names = {name for name, _path in AUDIT_HOOKS}
+        result: dict[str, dict[str, Optional[str]]] = {}
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) != 3 or parts[0] not in expected_names or parts[0] in result:
+                raise TVCtlError("known-hook response has an unknown schema")
+            name, state, digest = parts
+            if state not in ("absent", "regular", "non_regular", "oversized", "unreadable"):
+                raise TVCtlError("known-hook response contains an unknown state")
+            if state == "regular":
+                if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    raise TVCtlError("known-hook response contains an invalid hash")
+                result[name] = {"state": state, "sha256": digest}
+            else:
+                if digest != "-":
+                    raise TVCtlError("known-hook response contains an unexpected value")
+                result[name] = {"state": state, "sha256": None}
+        if set(result) != expected_names:
+            raise TVCtlError("known-hook response omitted a fixed hook")
+        return result
+
+    def _audit_boot_flags(self) -> dict[str, bool]:
+        script = """import os, stat
+flags = %r
+for name, path in flags:
+    try:
+        present = stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError:
+        present = False
+    print("%%s %%s" %% (name, "true" if present else "false"))
+""" % (AUDIT_BOOT_FLAGS,)
+        text = self.tv.run("python -c " + shlex.quote(script), timeout=8)
+        expected_names = {name for name, _path in AUDIT_BOOT_FLAGS}
+        result: dict[str, bool] = {}
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) != 2 or parts[0] not in expected_names or parts[0] in result or parts[1] not in ("true", "false"):
+                raise TVCtlError("boot-flag response has an unknown schema")
+            result[parts[0]] = parts[1] == "true"
+        if set(result) != expected_names:
+            raise TVCtlError("boot-flag response omitted a fixed flag")
+        return result
+
     def audit(self) -> dict[str, Any]:
         snapshot = self.inspect(include_dns=True)
         dns = snapshot["dns"]
         return {
+            "version": __version__,
             "target": self.target,
             "read_only": True,
             "device": snapshot["identity"],
@@ -469,6 +650,10 @@ class TVController:
                 "stored_nameservers": dns["stored"],
                 "effective_nameservers": dns["effective"],
             },
+            "services": self._audit_service_states(),
+            "mounts": self._audit_mount_states(),
+            "hbc_hooks": self._audit_hbc_hooks(),
+            "boot_flags": self._audit_boot_flags(),
         }
 
     def _new_checkpoint(self, path: Union[str, Path], operation: dict[str, Any], identity: dict[str, str],
@@ -494,17 +679,21 @@ class TVController:
                  checkpoint_path: Optional[Union[str, Path]] = None) -> dict[str, Any]:
         if feature not in FEATURES:
             raise TVCtlError("unknown settings feature")
-        category, proposed = FEATURES[feature]
+        feature_categories = FEATURES[feature]
         snapshot = self.inspect(include_dns=False)
-        before = {key: snapshot["settings"][category][key] for key in proposed}
-        enums = snapshot["setting_enums"][category]
+        before = {key: snapshot["settings"][category][key]
+                  for category, settings in feature_categories.items() for key in settings}
+        proposed = {key: value for settings in feature_categories.values() for key, value in settings.items()}
+        enums = {key: snapshot["setting_enums"][category][key]
+                 for category, settings in feature_categories.items() for key in settings}
         for key, wanted in proposed.items():
             if wanted not in enums[key]:
                 raise TVCtlError("requested setting value is not in the native enum")
         plan = {"target": self.target, "operation": "settings", "feature": feature,
                 "coordination": dict(COORDINATION_POLICY),
                 "mode": "apply" if apply else "plan", "before": before,
-                "proposed_after": proposed, "changed_keys": [key for key in proposed if before[key] != proposed[key]]}
+                "proposed_after": proposed,
+                "changed_keys": [key for key in proposed if before[key] != proposed[key]]}
         if not apply:
             return plan
         if checkpoint_path is None:
@@ -516,20 +705,27 @@ class TVController:
             plan["checkpoint"] = None
             return plan
         checkpoint = self._new_checkpoint(checkpoint_path, {"kind": "settings", "feature": feature},
-                                          snapshot["identity"], before, dict(proposed))
+                                          snapshot["identity"], before, proposed)
         try:
             self._assert_identity(checkpoint["identity"])
-            current = self._get_settings(category, tuple(proposed))
+            current_by_category = {
+                category: self._get_settings(category, tuple(settings))
+                for category, settings in feature_categories.items()
+            }
+            current = {key: values[key] for values in current_by_category.values() for key in values}
             if current != before:
                 update_checkpoint(checkpoint_path, checkpoint, "pre-write-state-conflict", "conflict-before-write")
                 raise TVCtlError("targeted setting changed before write; checkpoint retained")
             update_checkpoint(checkpoint_path, checkpoint, "settings-write-attempted", "write-attempted")
-            self.tv.luna("luna://com.webos.settingsservice/setSystemSettings",
-                         {"category": category, "settings": proposed})
-            readback = self._get_settings(category, tuple(proposed))
-            if readback != proposed:
-                update_checkpoint(checkpoint_path, checkpoint, "settings-readback-mismatch", "readback-failed")
-                raise TVCtlError("settings readback did not match; checkpoint retained, no automatic rollback")
+            readback: dict[str, str] = {}
+            for category, settings in feature_categories.items():
+                self.tv.luna("luna://com.webos.settingsservice/setSystemSettings",
+                             {"category": category, "settings": settings})
+                category_readback = self._get_settings(category, tuple(settings))
+                readback.update(category_readback)
+                if category_readback != settings:
+                    update_checkpoint(checkpoint_path, checkpoint, "settings-readback-mismatch", "readback-failed")
+                    raise TVCtlError("settings readback did not match; checkpoint retained, no automatic rollback")
             update_checkpoint(checkpoint_path, checkpoint, "settings-readback-verified", "verified")
         except TVCtlError:
             if checkpoint.get("status") in ("prepared", "write-attempted"):
@@ -596,7 +792,54 @@ class TVController:
         plan["mode"] = "verified"
         plan["readback"] = readback
         plan["checkpoint"] = str(checkpoint_path)
+        probe = self._probe_dns_reachability(desired[0])
+        plan["reachability_probe"] = probe
+        if probe["status"] != "answered":
+            plan["advice"] = ("DNS settings were read back and the verified checkpoint was retained, but the bounded reachability probe did not answer; inspect service/network state and explicitly run rollback if needed. No automatic rollback was attempted.")
         return plan
+
+    def _probe_dns_reachability(self, resolver: str) -> dict[str, Any]:
+        nslookup = "nslookup %s %s" % (shlex.quote(DNS_PROBE_HOSTNAME), shlex.quote(resolver))
+        python_probe = "python -c %s" % shlex.quote(
+            "import signal, socket; signal.alarm(5); socket.getaddrinfo(%r, 0); print('ok')" % DNS_PROBE_HOSTNAME
+        )
+        command = (
+            "if command -v nslookup >/dev/null 2>&1; then "
+            "if %s >/dev/null 2>&1; then printf 'answered nslookup'; "
+            "else printf 'failed nslookup'; fi; "
+            "elif command -v getent >/dev/null 2>&1; then "
+            "if getent hosts %s >/dev/null 2>&1; then printf 'answered getent'; "
+            "else printf 'failed getent'; fi; "
+            "elif command -v python >/dev/null 2>&1; then "
+            "if %s >/dev/null 2>&1; then printf 'answered python'; "
+            "else printf 'failed python'; fi; "
+            "else printf 'unavailable none'; fi"
+        ) % (nslookup, shlex.quote(DNS_PROBE_HOSTNAME), python_probe)
+        base = {
+            "hostname": DNS_PROBE_HOSTNAME,
+            "approved_resolver": resolver,
+            "timeout_seconds": DNS_PROBE_TIMEOUT,
+            "limitations": ("One fixed hostname lookup only; not an Internet-connectivity or telemetry test. "
+                            "nslookup queries the selected resolver directly; getent/Python use the system resolver path "
+                            "and cannot prove which configured server answered."),
+        }
+        try:
+            output = self.tv.run(command, timeout=DNS_PROBE_TIMEOUT).strip()
+        except TVCtlError:
+            return dict(base, status="failed", method="unknown", resolver_path="unknown")
+        markers = {
+            "answered nslookup": ("answered", "nslookup", "direct-selected-resolver"),
+            "failed nslookup": ("failed", "nslookup", "direct-selected-resolver"),
+            "answered getent": ("answered", "getent", "system-configured-resolver"),
+            "failed getent": ("failed", "getent", "system-configured-resolver"),
+            "answered python": ("answered", "python-stdlib", "system-configured-resolver"),
+            "failed python": ("failed", "python-stdlib", "system-configured-resolver"),
+            "unavailable none": ("unavailable", "none", "unavailable"),
+        }
+        if output not in markers:
+            return dict(base, status="failed", method="unknown", resolver_path="unknown")
+        status, method, resolver_path = markers[output]
+        return dict(base, status=status, method=method, resolver_path=resolver_path)
 
     def _set_connman_nameservers(self, service: str, servers: Sequence[str]) -> None:
         if not servers:
@@ -619,12 +862,16 @@ class TVController:
         checkpoint = read_checkpoint(checkpoint_path)
         kind, checkpoint = self._validate_checkpoint(checkpoint)
         operation = checkpoint["operation"]
-        feature = operation.get("feature") if kind == "settings" else None
-        if kind == "settings" and feature not in FEATURES:
-            raise TVCtlError("checkpoint settings feature is unsupported")
+        feature_categories: Mapping[str, Mapping[str, str]] = {}
         if kind == "settings":
-            category, proposed = FEATURES[feature]
-            if set(checkpoint.get("before", {})) != set(proposed) or checkpoint.get("after") != proposed:
+            feature = operation.get("feature")
+            if feature not in FEATURES:
+                raise TVCtlError("checkpoint settings feature is unsupported")
+            feature_categories = FEATURES[feature]
+            proposed = {key: value for settings in feature_categories.values() for key, value in settings.items()}
+            expected_keys = set(proposed)
+            if (set(checkpoint.get("before", {})) != expected_keys
+                    or checkpoint.get("after") != proposed):
                 raise TVCtlError("checkpoint settings state is inconsistent")
         else:
             if not isinstance(operation.get("service"), str) or not re.fullmatch(r"ethernet_[A-Za-z0-9_]+", operation["service"]):
@@ -649,39 +896,54 @@ class TVController:
         if snapshot["identity"] != checkpoint.get("identity"):
             raise TVCtlError("target boot/version identity differs from checkpoint; refusing rollback")
         if kind == "settings":
-            result = self._rollback_settings(checkpoint_path, checkpoint, category, proposed)
+            result = self._rollback_settings(checkpoint_path, checkpoint, feature_categories)
         else:
             result = self._rollback_dns(checkpoint_path, checkpoint, snapshot)
         result["coordination"] = dict(COORDINATION_POLICY)
         return result
 
     def _rollback_settings(self, path: Union[str, Path], checkpoint: dict[str, Any],
-                           category: str, proposed: Mapping[str, str]) -> dict[str, Any]:
-        keys = tuple(proposed)
+                           feature_categories: Mapping[str, Mapping[str, str]]) -> dict[str, Any]:
         before = checkpoint["before"]
         after = checkpoint["after"]
-        enums = self._setting_enums(category, keys)
-        for key in keys:
-            if before[key] not in enums[key] or after[key] not in enums[key]:
-                raise TVCtlError("checkpoint value is not in the current native enum")
-        current = self._get_settings(category, keys)
-        if any(current[key] not in (before[key], after[key]) for key in keys):
-            raise TVCtlError("live setting differs from both checkpoint states; refusing to clobber another change")
-        to_restore = {key: before[key] for key in keys if current[key] == after[key] and before[key] != after[key]}
+        current_by_category: dict[str, dict[str, str]] = {}
+        restore_by_category: dict[str, dict[str, str]] = {}
+        for category, settings in feature_categories.items():
+            keys = tuple(settings)
+            enums = self._setting_enums(category, keys)
+            for key in keys:
+                if before[key] not in enums[key] or after[key] not in enums[key]:
+                    raise TVCtlError("checkpoint value is not in the current native enum")
+            current = self._get_settings(category, keys)
+            if any(current[key] not in (before[key], after[key]) for key in keys):
+                raise TVCtlError("live setting differs from both checkpoint states; refusing to clobber another change")
+            current_by_category[category] = current
+            restore_by_category[category] = {
+                key: before[key] for key in keys
+                if current[key] == after[key] and before[key] != after[key]
+            }
+        current = {key: value for values in current_by_category.values() for key, value in values.items()}
+        to_restore = {category: values for category, values in restore_by_category.items() if values}
         if not to_restore:
             update_checkpoint(path, checkpoint, "rollback-already-at-before-state", "rollback-verified")
             return {"target": self.target, "operation": "rollback", "mode": "already-restored", "readback": current}
-        recheck = self._get_settings(category, keys)
-        if recheck != current:
-            raise TVCtlError("targeted setting changed before rollback write")
+        for category, keys in ((category, tuple(settings)) for category, settings in feature_categories.items()):
+            if self._get_settings(category, keys) != current_by_category[category]:
+                raise TVCtlError("targeted setting changed before rollback write")
         update_checkpoint(path, checkpoint, "rollback-settings-write-attempted", "rollback-attempted")
         try:
-            self.tv.luna("luna://com.webos.settingsservice/setSystemSettings",
-                         {"category": category, "settings": to_restore})
-            readback = self._get_settings(category, keys)
-            if readback != before:
-                update_checkpoint(path, checkpoint, "rollback-settings-readback-mismatch", "rollback-failed")
-                raise TVCtlError("rollback readback did not match; checkpoint retained")
+            readback: dict[str, str] = {}
+            for category, settings in feature_categories.items():
+                to_restore_category = to_restore.get(category)
+                if to_restore_category:
+                    self.tv.luna("luna://com.webos.settingsservice/setSystemSettings",
+                                 {"category": category, "settings": to_restore_category})
+                category_readback = self._get_settings(category, tuple(settings))
+                readback.update(category_readback)
+                expected = {key: before[key] for key in settings}
+                if category_readback != expected:
+                    update_checkpoint(path, checkpoint, "rollback-settings-readback-mismatch", "rollback-failed")
+                    raise TVCtlError("rollback readback did not match; checkpoint retained")
         except TVCtlError:
             if checkpoint.get("status") == "rollback-attempted":
                 update_checkpoint(path, checkpoint, "rollback-settings-failed", "rollback-failed")
@@ -734,16 +996,25 @@ class TVController:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Read-only audit and explicitly approved LG CX settings/DNS operations.")
-    parser.add_argument("--target", required=True, type=validate_target,
-                        help="required SSH config alias; no default device is inferred")
+    parser = argparse.ArgumentParser(
+        description="Read-only audit and explicitly approved LG CX settings/DNS operations.",
+        epilog="Use --list-features for exact setting keys and coverage limits. Mutating operations and private checkpoint/output files require POSIX (Linux/macOS or WSL).",
+    )
+    parser.add_argument("--version", action="version",
+                        version="tvctl %s (model %s, firmware %s, webOS %s, build %s)" %
+                                (__version__, MODEL, FIRMWARE, WEBOS_VERSION, ETC_VERSION))
+    parser.add_argument("--list-features", action="store_true",
+                        help="print exact supported privacy-setting coverage as JSON (no target required)")
+    parser.add_argument("--target", type=validate_target,
+                        help="required SSH config alias for device commands; no default is inferred")
     parser.add_argument("--confirm-model", help="owner confirmation; required for every mutation (exact: LG OLED65CX6LA)")
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="command")
     audit = commands.add_parser("audit", help="collect a safe, read-only TV snapshot")
     audit.add_argument("--output", help="write a private JSON audit file (default: stdout)")
 
     settings = commands.add_parser("settings", help="plan or apply one supported settings feature")
-    settings.add_argument("--feature", required=True, choices=sorted(FEATURES))
+    settings.add_argument("--feature", required=True, choices=sorted(FEATURES),
+                          help="feature group; run --list-features for exact setting keys")
     settings.add_argument("--apply", action="store_true", help="perform the explicitly confirmed mutation")
     settings.add_argument("--confirm-target", help="must exactly match --target for apply")
     settings.add_argument("--checkpoint", help="new private, exclusive-create checkpoint path")
@@ -795,11 +1066,25 @@ def _validate_consent(args: argparse.Namespace) -> None:
             raise TVCtlError("rollback apply requires owner --confirm-model 'LG OLED65CX6LA'")
         if not args.apply and args.confirm_target is not None:
             raise TVCtlError("--confirm-target is only valid with --apply")
+    if os.name != "posix":
+        if args.command in ("settings", "dns", "rollback") and args.apply:
+            raise TVCtlError("mutating commands require POSIX mode permissions; run under WSL, Linux, or macOS before any TV connection or write")
+        if args.command == "audit" and args.output:
+            raise TVCtlError("private audit files require POSIX mode permissions; use WSL, Linux, or macOS (stdout audit remains read-only)")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.list_features:
+        if args.command is not None:
+            parser.error("--list-features cannot be combined with a device command")
+        print(json.dumps(feature_catalog(), ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    if args.command is None:
+        parser.error("a device command is required (or use --list-features / --version)")
+    if args.target is None:
+        parser.error("--target is required for device commands")
     try:
         _validate_consent(args)
         controller = TVController(args.target, confirmed_model=args.confirm_model)
@@ -807,18 +1092,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = controller.audit()
             if args.output:
                 write_private_json(args.output, result)
-                print(json.dumps({"status": "written", "output": args.output, "mode": "0600"}, indent=2))
+                print(json.dumps({"status": "written", "output": args.output, "mode": "0600", "version": __version__}, indent=2))
             else:
                 print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         elif args.command == "settings":
             result = controller.settings(args.feature, apply=args.apply, checkpoint_path=args.checkpoint)
+            result.setdefault("version", __version__)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         elif args.command == "dns":
             result = controller.dns(args.servers, apply=args.apply, checkpoint_path=args.checkpoint,
                                     ack_external_dns=args.ack_external_dns)
+            result.setdefault("version", __version__)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             result = controller.rollback(args.checkpoint, apply=args.apply)
+            result.setdefault("version", __version__)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except TVCtlError as exc:
