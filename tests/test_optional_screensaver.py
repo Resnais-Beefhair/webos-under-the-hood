@@ -174,7 +174,7 @@ class PrepareTests(unittest.TestCase):
             state.mkdir(mode=0o700)
             with patch.object(prepare, "ROOT", root), patch.object(prepare, "LOCAL_STATE", state):
                 safe = prepare.validate_output_dir(".local-state/run-one")
-                self.assertEqual(safe, state / "run-one")
+                self.assertEqual(safe, (state / "run-one").resolve())
                 with self.assertRaisesRegex(ValueError, "child of .local-state"):
                     prepare.validate_output_dir(root / "outside")
                 safe.mkdir()
@@ -931,6 +931,7 @@ class ReloadTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PID/starttime changed"):
                 reload._runner(app)
 
+    @unittest.skipUnless(os.name == "posix", "device PTY select uses POSIX file descriptors, not Windows sockets")
     def test_luna_uses_bounded_pty_and_allowlisted_methods(self):
         reload = self.reload
         with tempfile.TemporaryFile() as output:
