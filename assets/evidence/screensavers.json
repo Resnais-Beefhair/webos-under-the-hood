@@ -1,0 +1,42 @@
+{
+  "scope": "Selected manually reviewed screensaver-only images from an earlier owner-approved native-TV experiment; not evidence of a live installation of the public optional module.",
+  "model": "OLED65CX6LA",
+  "firmware": "04.64.00",
+  "webos": "5.6.2-21",
+  "capture_method": "com.webos.service.capture/executeOneShot, DISPLAY, PNG",
+  "full_frame_size": [
+    1920,
+    1080
+  ],
+  "full_frames_processing": "none; native PNG bytes preserved",
+  "detail_processing": {
+    "source": "screensavers/original-fireworks.png",
+    "crop_xyxy": [
+      78,
+      215,
+      590,
+      727
+    ],
+    "size": [
+      512,
+      512
+    ],
+    "processing": "crop only; no resampling or brightness/gamma/contrast/color adjustment"
+  },
+  "selection": "Eight original-animation frames were sampled; a clearly visible colorful burst was selected. Original and replacement are different animation moments, not synchronized photometry.",
+  "privacy_review": "No playback, recommendations, account, host, LAN, MAC or serial data visible. Native Finnish wake-up hint remains in the original screenshot.",
+  "images": [
+    {
+      "file": "screensavers/original-fireworks.png",
+      "sha256": "37ad5e2c454e01fe50949b87ba34b2693eaa14c40a4c2daced662cacc000b687"
+    },
+    {
+      "file": "screensavers/moving-rings.png",
+      "sha256": "ccfb1b55b0da931f415415a1b08fd075ac60ac301f359860f13002b123973a09"
+    },
+    {
+      "file": "screensavers/original-fireworks-detail.png",
+      "sha256": "c8e44092df4d6f7c0029a8b95465a088d5371aee39b2074764e10b7fdd87d703"
+    }
+  ]
+}

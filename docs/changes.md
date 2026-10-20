@@ -28,6 +28,7 @@ The public [connection guide](connection.md) uses placeholders and lets you perf
 | Automatic-update preference | `support.automaticUpdate` | `"on"` → `"off"`, trade-off explicit | `settings --feature updates` |
 | Ethernet DNS | selected ConnMan service's `Nameservers.Configuration` | one Google resolver → AdGuard filtering pair | `dns --servers ...` |
 | YouTube main-icon previews | Home `getAppPreview(launchPoint)` | one producer guard, original firmware not overwritten | [optional module](../optional-preview/README.md) |
+| Screensaver visual, optional | `com.webos.app.screensaver` `ScreenSaver.qml` and geometry wrapper `MainView.qml` | Original moving-rings code plus a local, pinned geometry transformation, two reversible read-only overlays; no wake-up text | [optional screensaver module](../optional-screensaver/README.md), [real before/after](screensavers.md) |
 
 `off` is a **JSON string**, not the boolean `false`. Native category, key, schema enumeration and response must be checked on the target. A command that returns success without a correct readback has not completed.
 

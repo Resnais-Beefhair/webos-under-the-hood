@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0 — 20 October 2026
+
+### Complete initial-access guide
+
+- Replace the rooting-background stub with a self-contained, revision-pinned SlopBro → HBC → first root console → trusted SSH guide. Include Ubuntu/WSL host setup, return-path verification using the harmless simple server, explicit pairing/root/reboot gates, failure stops, private-resource cleanup and internal links through every remaining stage.
+- Verify upstream source and non-exploit host behavior separately from historical root records; do not claim a newly tested fresh-TV root or universal firmware eligibility. Keep SlopBro and its AGPL payload outside the distribution.
+- Provision the public key over the temporary trusted root console **before** enabling SSH; retain telnet across the approved startup until strict key-authenticated SSH is verified. Disclose the pinned SSAP client's unauthenticated TLS and request-tracker limitations.
+- Fix public-key bootstrap instructions for embedded telnet's short-line limit, exercise chunk assembly and verified helper transfer as real shell recipes using synthetic fixtures, and provide an owner-controlled telnet-disable startup and truthful single-target port check.
+
+### Optional screensaver replacement
+
+- Add an independent, **off-by-default** moving-rings screensaver option, separate from privacy settings and Home customization. The original visual keeps the native component interface and approximately 7.5-second loop contract, without drawing the wake-up hint.
+- Provide a firmware/hash-pinned local generator, explicitly acknowledged owned-overlay operations, separately chosen native screensaver reload and boot persistence, and targeted recovery. Owners supply their own firmware files; no LG QML or private deployment state is published.
+- Snapshot validated package bytes for staging/hash readback; serialize lifecycle operations with directory `flock` and preserve exact ownership in a durable interruption-recovery journal. Test concurrent refusals, pending-intent recovery, committed-state preservation and foreign/stacked-mount stops without real mount operations.
+- Add offline success and refusal tests. Public generated deployment remains **offline-tested**, not newly installed on the source TV. Original private visual tests and public runtime tests are documented separately; no cold-boot or long-term OLED qualification is claimed.
+
+### Real before/after gallery
+
+- Include original fireworks and moving-rings 1920 × 1080 DISPLAY captures plus a clearly labeled 512 × 512 native-pixel original detail.
+- Preserve native PNG bytes and public SHA-256/crop provenance; no brightness, contrast, gamma, color or full-frame resizing edits. Clarify third-party artwork ownership and capture limitations.
+- Link manual installation and rollback from the README, compatibility, validation and recovery guides. No TV settings, services, applications or network configuration were changed while preparing this publication.
+
 ## 0.1.0 — 20 October 2026
 
 First explicitly versioned release. The original repository publication was unversioned; this release includes its field guide and the following issue-driven hardening.

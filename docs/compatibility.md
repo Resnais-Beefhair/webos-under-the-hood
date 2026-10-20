@@ -9,7 +9,7 @@
 - Existing TV tools: `luna-send`, `systemctl`, ConnMan/`connmanctl`, `mount`, `sha256sum`, `script` and embedded Python 2.7. Do not install a replacement Python on the TV.
 - Host: Python 3.9 or later, OpenSSH client and a POSIX shell. Linux and macOS are documented; on Windows use WSL for the shell recipes. Native PowerShell redirection and quote rules are different and are not a tested drop-in replacement.
 
-The exact versions above were read back from the source device. The evidence is in [the gallery](gallery.md). The public CLI and optional Home module have their own offline tests; that does **not** imply the refactored installers have been run on every device.
+The exact versions above were read back from the source device. The evidence is in [the gallery](gallery.md). The public CLI, optional Home module and [optional screensaver module](../optional-screensaver/README.md) have their own offline tests; that does **not** imply the refactored installers have been run on every device.
 
 ## Stop conditions
 
@@ -25,10 +25,11 @@ This is not an assertion that other CX sizes or firmware cannot work. They have 
 - Turning automatic updates off can preserve a root setup while leaving security vulnerabilities unpatched. It is **optional and not a blanket security recommendation**. Hosts/startup/DNS blocking cannot guarantee the firmware will never update.
 - A filtered public DNS provider sees your DNS questions and may block a required hostname. Resolver settings are not LAN isolation. IPv6, direct IPs, encrypted DNS and hard-coded resolvers can bypass this layer.
 - The optional Home overlay bypasses only Home's saved CRIU state to load new QML. Startup speed was not benchmarked; real early-boot timing was not tested.
+- Optional screensaver replacement is a cosmetic experiment, not a privacy feature or an OLED safety certification. It changes two pinned QML components, keeps a black background and moving geometry, and omits the native wake-up text. Picture settings, native input handling and panel-protection settings are not changed. Physical remote dismissal, idle activation, long-run behavior and cold-boot persistence still need device-owner verification. Enable persistence only as a separate choice after a successful temporary test.
 - Root changes the device's trust and support model. Homebrew Channel removal, Developer Mode interactions, firmware changes or factory resets may remove access or affect persistence. Consult upstream before changing these.
 
 ## Things deliberately outside the automated path
 
 Root exploits, acquiring someone else's credentials, warranty advice, firmware downloads, installing Developer Mode, router VLAN/firewall changes, EULA withdrawal, application removal, flashing partitions and unscheduled TV/Home/service restarts.
 
-The [rooting background](rooting.md) explains the historical starting point without promising a universal one-command root.
+The [complete manual rooting guide](rooting.md) supplies the initial-access steps for the documented source profile, including owner-chosen bootstrap restarts, while keeping them separate from the automated toolkit. It is source-reviewed and host-tested, not a universal one-command root or a freshly rerun root of an untouched TV.
