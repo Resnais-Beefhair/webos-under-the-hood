@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import time
+import preview_runtime
 
 APP = "com.webos.app.home"
 SCHEMA_DIR = "/etc/palm/schemas/sam"
@@ -149,11 +150,37 @@ def launch_payload(mode):
     return payload
 
 
+def recovery_command():
+    return "run python %s --visible --allow-original-snapshot --ack-home-reload (or power-cycle)" % quote(os.path.abspath(__file__))
+
+
+def _fresh_home(apps, stamps, starttime):
+    fresh = set()
+    for pid in home_pids(apps):
+        current = starttime(pid)
+        previous = stamps.get(pid)
+        if current is not None and ((pid not in stamps) or
+                                    (previous is not None and current != previous)):
+            fresh.add(pid)
+    return fresh
+
+
 def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
                 clock=time.time, starttime=start_time, read_params=read_home_params,
-                readlink=os.readlink, terminate=os.kill, validator=validate_payload):
+                readlink=os.readlink, terminate=os.kill, validator=validate_payload,
+                inspect_preview=None):
     if mode not in ("--hidden", "--visible"):
         raise ValueError("reload mode must be --hidden or --visible")
+    if not allow_original_snapshot:
+        inspection = preview_runtime.inspect if inspect_preview is None else inspect_preview
+        mounts = inspection()
+        states = dict((target, state) for target, source, state in mounts)
+        expected = [preview_runtime.UI] + list(preview_runtime.CHECKPOINTS)
+        missing = [target for target in expected if target not in states]
+        unowned = [target for target in expected if states.get(target) != "owned"]
+        if missing or unowned:
+            raise RuntimeError("preview mounts are not all active and owned; missing=%s; not_owned=%s" %
+                               (", ".join(missing) or "none", ", ".join(unowned) or "none"))
     # Validate every mutating request before closing Home, so schema failure
     # cannot strand the user without a relaunched Home process.
     validator("com.webos.applicationManager/closeByAppId", {"id": APP})
@@ -163,30 +190,74 @@ def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
     old = home_pids(before)
     stamps = dict((pid, starttime(pid)) for pid in old)
     other_before = other_app_identities(before, starttime)
+    close_errors = []
     if old:
-        api("com.webos.applicationManager/closeByAppId", {"id": APP})
+        try:
+            api("com.webos.applicationManager/closeByAppId", {"id": APP})
+        except Exception as exc:
+            close_errors.append("close request: %s" % exc)
         sleep(1)
         for pid in old:
-            if stamps[pid] is not None and starttime(pid) == stamps[pid]:
-                executable = readlink("/proc/%s/exe" % pid)
-                if executable != "/usr/bin/com.webos.app.home":
-                    raise RuntimeError("refusing TERM: PID no longer names the exact Home executable")
-                terminate(pid, signal.SIGTERM)
+            try:
+                if stamps[pid] is not None and starttime(pid) == stamps[pid]:
+                    executable = readlink("/proc/%s/exe" % pid)
+                    if executable != "/usr/bin/com.webos.app.home":
+                        raise RuntimeError("refusing TERM: PID no longer names the exact Home executable")
+                    terminate(pid, signal.SIGTERM)
+            except Exception as exc:
+                close_errors.append("TERM PID %s: %s" % (pid, exc))
         deadline = clock() + 6
         while any(stamps[pid] is not None and starttime(pid) == stamps[pid] for pid in old):
             if clock() > deadline:
-                raise RuntimeError("original Home did not exit; no KILL escalation")
+                close_errors.append("original Home did not exit; no KILL escalation")
+                break
             sleep(0.2)
-    api("com.webos.applicationManager/launch", payload)
-    deadline = clock() + 12
-    while True:
-        after = running(api)
-        new = home_pids(after)
-        if new and all(starttime(pid) is not None and starttime(pid) != stamps.get(pid) for pid in new):
+    launch_errors = []
+    new = set()
+    launch_attempts = 0
+    for attempt, wait_seconds in enumerate((1, 2, 12)):
+        if attempt:
+            # Never issue another launch unless Luna confirms no fresh Home
+            # process appeared after the previous request.
+            try:
+                new = _fresh_home(running(api), stamps, starttime)
+            except Exception as exc:
+                raise RuntimeError("cannot verify Home before launch retry: %s; %s" %
+                                   (exc, recovery_command()))
+            if new:
+                break
+        launch_attempts += 1
+        launch_error = None
+        try:
+            api("com.webos.applicationManager/launch", payload)
+        except Exception as exc:
+            launch_error = exc
+            launch_errors.append("attempt %d: %s" % (attempt + 1, exc))
+        # A successful Luna response means the launch was accepted. Give it
+        # the full startup window and never send a duplicate request merely
+        # because the running list is slow to update.
+        deadline = clock() + (wait_seconds if launch_error is not None else 12)
+        while True:
+            try:
+                new = _fresh_home(running(api), stamps, starttime)
+            except Exception as exc:
+                raise RuntimeError("cannot verify whether Home relaunched: %s; %s" %
+                                   (exc, recovery_command()))
+            if new:
+                break
+            if clock() >= deadline:
+                break
+            sleep(0.4)
+        if new:
             break
-        if clock() > deadline:
-            raise RuntimeError("no fresh Home PID appeared")
-        sleep(0.4)
+        if launch_error is None:
+            break
+    if not new:
+        details = "; ".join(launch_errors) if launch_errors else "launch requests returned without a fresh Home PID"
+        if close_errors:
+            details += "; " + "; ".join(close_errors)
+        raise RuntimeError("no fresh Home PID appeared after %d bounded launch attempts (%s); %s" %
+                           (launch_attempts, details, recovery_command()))
     sleep(2)
     final = running(api)
     final_home = home_pids(final)
@@ -198,8 +269,9 @@ def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
     snapshot_flags = dict((pid, is_snapshot(value)) for pid, value in params.items())
     if not allow_original_snapshot and any(snapshot_flags.values()):
         raise RuntimeError("Home restored a CRIU snapshot instead of starting new code")
-    if other_app_identities(final, starttime) != other_before:
-        raise RuntimeError("another app PID or process start time changed while reloading Home")
+    other_after = other_app_identities(final, starttime)
+    if any(identity not in other_after for identity in other_before):
+        raise RuntimeError("an app that existed before reload changed PID or process start time")
     return {
         "old_home_pids": sorted(old),
         "new_home_pids": sorted(final_home),
@@ -247,6 +319,7 @@ def main(argv=None):
         return 0
     except Exception as exc:
         print("Home reload failed: %s" % exc, file=sys.stderr)
+        print("If Home is closed, %s." % recovery_command(), file=sys.stderr)
         return 1
 
 

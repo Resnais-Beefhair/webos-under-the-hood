@@ -10,7 +10,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 PUBLIC = Path(__file__).resolve().parents[1]
 OPTIONAL = PUBLIC / "optional-preview"
@@ -28,6 +28,7 @@ spec = importlib.util.spec_from_file_location("preview_prepare", OPTIONAL / "pre
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 runtime = load_python_template("preview_runtime.py.tpl", "preview_runtime_for_test")
+sys.modules["preview_runtime"] = runtime
 reload_home = load_python_template("reload_home.py.tpl", "reload_home_for_test")
 boot_manager = load_python_template("manage_boot_hook.py.tpl", "manage_boot_hook_for_test")
 
@@ -70,6 +71,7 @@ class PrepareTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "found 2"):
                 prepare.patch_source(duplicate)
 
+    @unittest.skipUnless(os.name == "posix", "private mode and symlink guards require POSIX")
     def test_output_is_confined_fresh_and_non_symlink_under_local_state(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "public-release"
@@ -104,6 +106,7 @@ class PrepareTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
         self.assertFalse(any(path.suffix == ".qml" for path in OPTIONAL.rglob("*")))
 
+    @unittest.skipUnless(os.name == "posix", "private file modes require POSIX")
     def test_bundle_write_is_private_and_refuses_overwrite(self):
         source = SYNTHETIC_QML
         artifacts, _ = build_synthetic_bundle(source)
@@ -119,6 +122,17 @@ class PrepareTests(unittest.TestCase):
                 self.assertEqual((output / "preview_runtime.py").stat().st_mode & 0o777, 0o700)
                 with self.assertRaises(FileExistsError):
                     prepare.write_bundle(output, artifacts)
+
+    def test_prepare_messages_use_current_local_state_path(self):
+        source = (OPTIONAL / "prepare.py").read_text(encoding="utf-8")
+        self.assertNotIn("public-release/.local-state", source)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = root / ".local-state"
+            state.mkdir(mode=0o700)
+            with patch.object(prepare, "ROOT", root), patch.object(prepare, "LOCAL_STATE", state):
+                with self.assertRaisesRegex(ValueError, r"child of \.local-state"):
+                    prepare.validate_output_dir(root / "outside")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is optional for QML-guard behavior test")
     def test_synthetic_qml_behavior_is_per_launchpoint(self):
@@ -166,6 +180,44 @@ class MountGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "not read-only"):
             runtime.mount_state(self.source, self.target, [writable], self.identity)
 
+    @unittest.skipUnless(os.name == "posix", "device mount inspection uses /proc/mounts")
+    def test_missing_checkpoint_directories_are_reported_not_silently_skipped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            first = str(Path(temp) / "checkpoint-one")
+            second = str(Path(temp) / "checkpoint-two")
+            with patch.object(runtime, "CHECKPOINTS", (first, second)):
+                with self.assertRaises(RuntimeError) as caught:
+                    runtime._targets()
+            self.assertIn(first, str(caught.exception))
+            self.assertIn(second, str(caught.exception))
+            self.assertIn(first + "=missing", str(caught.exception))
+            self.assertIn(second + "=missing", str(caught.exception))
+
+    @unittest.skipUnless(os.name == "posix", "device mount inspection uses /proc/mounts")
+    def test_check_and_boot_report_missing_checkpoints_before_mount_or_reload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = (str(Path(temp) / "checkpoint-one"), str(Path(temp) / "checkpoint-two"))
+            with patch.object(runtime, "CHECKPOINTS", missing), \
+                 patch.object(runtime, "_validate_package"), \
+                 patch.object(runtime, "require_root"), \
+                 patch.object(runtime.subprocess, "check_call") as call, \
+                 patch("sys.stderr", new_callable=types.SimpleNamespace) as stderr:
+                # Redirect with a small write-capturing object to exercise both CLI paths.
+                stderr.write = Mock()
+                stderr.flush = Mock()
+                self.assertEqual(runtime.main(["--check"]), 1)
+                check_message = "".join(call.args[0] for call in stderr.write.call_args_list)
+                stderr.write.reset_mock()
+                self.assertEqual(runtime.main(["--boot", "--ack-mount", "--ack-home-reload"]), 1)
+                boot_message = "".join(call.args[0] for call in stderr.write.call_args_list)
+                call.assert_not_called()
+            for path in missing:
+                self.assertIn(path, check_message)
+                self.assertIn(path, boot_message)
+                self.assertIn(path + "=missing", check_message)
+                self.assertIn(path + "=missing", boot_message)
+            self.assertIn("mount states:", check_message)
+
     def test_apply_mounts_remounts_read_only_and_is_idempotent(self):
         plan = [(self.target, self.source, "absent")]
         with patch.object(runtime, "inspect", return_value=plan), \
@@ -193,7 +245,7 @@ class MountGuardTests(unittest.TestCase):
             if args[:2] == ["mount", "-o"]:
                 raise subprocess.CalledProcessError(1, args)
         with patch.object(runtime, "inspect", return_value=plan), \
-             patch.object(runtime, "mount_state", return_value="absent"), \
+             patch.object(runtime, "mount_state", side_effect=["absent", "owned"]), \
              patch.object(runtime, "_mount_rows", side_effect=[rows, []]), \
              patch.object(runtime, "_same_inode", return_value=True), \
              patch.object(runtime.subprocess, "check_call", side_effect=fake_call):
@@ -201,6 +253,16 @@ class MountGuardTests(unittest.TestCase):
                 runtime.apply_mounts()
         self.assertEqual(calls[-1], ["umount", self.target])
         self.assertNotIn(["umount", "-l", self.target], calls)
+
+    def test_cleanup_refuses_to_unmount_a_new_bind_that_is_not_read_only(self):
+        writable = list(self.row)
+        writable[3] = "rw,relatime"
+        with patch.object(runtime, "_mount_rows", return_value=[writable]), \
+             patch.object(runtime, "_same_inode", return_value=True), \
+             patch.object(runtime.subprocess, "check_call") as call:
+            with self.assertRaisesRegex(RuntimeError, "read-only"):
+                runtime._cleanup_new_mount(self.target, self.source)
+            call.assert_not_called()
 
     def test_no_argument_hook_and_check_mode_do_not_call_mount_tools(self):
         with patch.object(runtime, "inspect", side_effect=AssertionError("should not inspect")), \
@@ -233,6 +295,27 @@ class BootHookTests(unittest.TestCase):
                     self.assertEqual(call.call_args.args[0][-2:], ["--hidden", "--ack-home-reload"])
                 else:
                     call.assert_not_called()
+
+    def test_boot_reload_failure_cleans_only_created_mounts_and_attempts_original_recovery(self):
+        created_target = "/mock/new/checkpoint"
+        created_source = "/mock/base/empty-checkpoint"
+        preexisting_mount = ("/mock/preexisting/UI.qml", "/mock/base/Interfaces.patched.qml")
+        def apply(on_mount_created=None):
+            # A preexisting owned bind is deliberately not reported as created.
+            if on_mount_created is not None:
+                on_mount_created(created_target, created_source)
+            return 1
+        failed_reload = subprocess.CalledProcessError(1, ["reload_home.py"])
+        with patch.object(runtime, "require_root"), \
+             patch.object(runtime, "apply_mounts", side_effect=apply), \
+             patch.object(runtime, "_cleanup_new_mount") as cleanup, \
+             patch.object(runtime.subprocess, "check_call", side_effect=[failed_reload, 0]) as calls:
+            self.assertEqual(runtime.main(["--boot", "--ack-mount", "--ack-home-reload"]), 1)
+        cleanup.assert_called_once_with(created_target, created_source)
+        self.assertNotIn(call(*preexisting_mount), cleanup.call_args_list)
+        self.assertEqual(calls.call_count, 2)
+        self.assertEqual(calls.call_args_list[1].args[0][-3:],
+                         ["--visible", "--allow-original-snapshot", "--ack-home-reload"])
 
     def test_explicit_one_time_mount_never_reloads_home(self):
         with patch.object(runtime, "require_root"), \
@@ -330,6 +413,13 @@ class RollbackTests(unittest.TestCase):
 
 
 class HomeReloadTests(unittest.TestCase):
+    @staticmethod
+    def owned_preview():
+        return [(runtime.UI, os.path.join(runtime.BASE, "Interfaces.patched.qml"), "owned")] + [
+            (target, os.path.join(runtime.BASE, "empty-checkpoint"), "owned")
+            for target in runtime.CHECKPOINTS
+        ]
+
     def test_native_schema_required_unknown_and_types_are_enforced(self):
         schemas = {
             "closeByAppId": {"required": ["id"], "properties": {"id": {"type": "string"}}},
@@ -345,6 +435,40 @@ class HomeReloadTests(unittest.TestCase):
             reload_home.validate_payload("com.webos.applicationManager/launch", {"id": "x", "launchHidden": "yes"}, schema_loader=loader)
         with self.assertRaisesRegex(ValueError, "enum"):
             reload_home.validate_payload("com.webos.applicationManager/launch", {"id": "x", "preload": "none"}, schema_loader=loader)
+
+    def test_reload_refuses_missing_or_foreign_mounts_before_close(self):
+        expected = self.owned_preview()
+        for bad_target, bad_state in ((runtime.UI, "absent"), (runtime.CHECKPOINTS[0], "absent"),
+                                      (runtime.CHECKPOINTS[1], "foreign")):
+            with self.subTest(target=bad_target, state=bad_state):
+                inspection = [(target, source, bad_state if target == bad_target else state)
+                              for target, source, state in expected]
+                requests = []
+                with self.assertRaisesRegex(RuntimeError, "not all active and owned"):
+                    reload_home.reload_home(
+                        "--visible", api=lambda method, payload: requests.append((method, payload)),
+                        inspect_preview=lambda: inspection)
+                self.assertEqual(requests, [])
+
+    def test_explicit_original_snapshot_recovery_bypasses_preview_mount_guard(self):
+        inspected = []
+        apps = []
+        current = {"time": 0.0}
+        def api(method, payload):
+            if method.endswith("/running"):
+                return {"running": apps}
+            return {"returnValue": True}
+        def sleep(seconds):
+            current["time"] += seconds
+        # Failure after launch is expected; the key assertion is that the
+        # explicitly approved recovery mode never inspects preview mounts.
+        with self.assertRaisesRegex(RuntimeError, "fresh Home PID"):
+            reload_home.reload_home(
+                "--visible", allow_original_snapshot=True, api=api, sleep=sleep,
+                clock=lambda: current["time"], starttime=lambda pid: None,
+                validator=lambda method, payload: None,
+                inspect_preview=lambda: inspected.append(True))
+        self.assertEqual(inspected, [])
 
     def test_processid_schema_snapshot_and_nested_snapshot_marker(self):
         self.assertEqual(reload_home.home_pids([{"id": reload_home.APP, "processid": "2035"}]), {2035})
@@ -362,8 +486,9 @@ class HomeReloadTests(unittest.TestCase):
         after = [
             {"id": reload_home.APP, "processid": 101},
             {"id": "com.webos.app.youtube", "processid": 200},
+            {"id": "com.webos.app.netflix", "processid": 300},
         ]
-        ticks = {100: "old-home", 101: "new-home", 200: "youtube"}
+        ticks = {100: "old-home", 101: "new-home", 200: "youtube", 300: "new-app"}
         requests = []
         current = {"time": 0.0}
         def api(method, payload):
@@ -383,7 +508,7 @@ class HomeReloadTests(unittest.TestCase):
             starttime=lambda pid: ticks.get(pid),
             read_params=lambda pid: {"parameters": {"snapshot": False}},
             readlink=lambda path: "/usr/bin/com.webos.app.home", terminate=term,
-            validator=lambda method, payload: None,
+            validator=lambda method, payload: None, inspect_preview=self.owned_preview,
         )
         self.assertEqual(result["new_home_pids"], [101])
         self.assertTrue(result["other_app_pids_and_starttimes_unchanged"])
@@ -394,6 +519,139 @@ class HomeReloadTests(unittest.TestCase):
         self.assertEqual(launch["id"], reload_home.APP)
         self.assertTrue(launch["launchHidden"])
         self.assertEqual(launch["preload"], "full")
+
+    def test_failed_launch_is_retried_only_until_a_fresh_home_appears(self):
+        before = [{"id": reload_home.APP, "processid": 100}]
+        after = [{"id": reload_home.APP, "processid": 101}]
+        ticks = {100: "old-home", 101: "new-home"}
+        current = {"time": 0.0}
+        running_calls = {"count": 0}
+        launch_calls = []
+        launched = {"value": False}
+        def api(method, payload):
+            if method.endswith("/running"):
+                running_calls["count"] += 1
+                if running_calls["count"] == 1:
+                    return {"running": before}
+                return {"running": after if launched["value"] else []}
+            if method.endswith("/launch"):
+                launch_calls.append(payload)
+                if len(launch_calls) == 1:
+                    raise RuntimeError("transient Luna timeout")
+                launched["value"] = True
+                return {"returnValue": True}
+            return {"returnValue": True}
+        def term(pid, sig):
+            ticks[pid] = "gone"
+        def sleep(seconds):
+            current["time"] += seconds
+        result = reload_home.reload_home(
+            "--visible", api=api, sleep=sleep, clock=lambda: current["time"],
+            starttime=lambda pid: ticks.get(pid),
+            read_params=lambda pid: {"parameters": {"snapshot": False}},
+            readlink=lambda path: "/usr/bin/com.webos.app.home", terminate=term,
+            validator=lambda method, payload: None, inspect_preview=self.owned_preview)
+        self.assertEqual(result["new_home_pids"], [101])
+        self.assertEqual(len(launch_calls), 2)
+
+    def test_reload_still_detects_identity_change_of_an_app_that_preexisted(self):
+        before = [{"id": reload_home.APP, "processid": 100},
+                  {"id": "com.webos.app.youtube", "processid": 200}]
+        after = [{"id": reload_home.APP, "processid": 101},
+                 {"id": "com.webos.app.youtube", "processid": 201}]
+        ticks = {100: "old-home", 101: "new-home", 200: "old-youtube", 201: "new-youtube"}
+        running_calls = {"count": 0}
+        current = {"time": 0.0}
+        def api(method, payload):
+            if method.endswith("/running"):
+                running_calls["count"] += 1
+                return {"running": before if running_calls["count"] == 1 else after}
+            return {"returnValue": True}
+        def sleep(seconds):
+            current["time"] += seconds
+        with self.assertRaisesRegex(RuntimeError, "existed before reload changed PID"):
+            reload_home.reload_home(
+                "--visible", api=api, sleep=sleep, clock=lambda: current["time"],
+                starttime=lambda pid: ticks.get(pid),
+                read_params=lambda pid: {"parameters": {"snapshot": False}},
+                readlink=lambda path: "/usr/bin/com.webos.app.home",
+                terminate=lambda pid, sig: ticks.__setitem__(pid, "gone"),
+                validator=lambda method, payload: None, inspect_preview=self.owned_preview)
+
+    def test_all_launch_attempts_fail_with_concrete_recovery_instruction(self):
+        before = [{"id": reload_home.APP, "processid": 100}]
+        ticks = {100: "old-home"}
+        current = {"time": 0.0}
+        running_calls = {"count": 0}
+        launch_calls = []
+        def api(method, payload):
+            if method.endswith("/running"):
+                running_calls["count"] += 1
+                return {"running": before if running_calls["count"] == 1 else []}
+            if method.endswith("/launch"):
+                launch_calls.append(payload)
+                raise RuntimeError("Luna unavailable")
+            return {"returnValue": True}
+        def sleep(seconds):
+            current["time"] += seconds
+        with self.assertRaisesRegex(RuntimeError, "after 3 bounded launch attempts") as caught:
+            reload_home.reload_home(
+                "--visible", api=api, sleep=sleep, clock=lambda: current["time"],
+                starttime=lambda pid: ticks.get(pid),
+                readlink=lambda path: "/usr/bin/com.webos.app.home",
+                terminate=lambda pid, sig: ticks.__setitem__(pid, "gone"),
+                validator=lambda method, payload: None, inspect_preview=self.owned_preview)
+        self.assertEqual(len(launch_calls), 3)
+        self.assertIn("--allow-original-snapshot --ack-home-reload", str(caught.exception))
+
+    def test_successful_launch_request_is_not_duplicated_while_pid_list_lags(self):
+        current = {"time": 0.0}
+        launches = []
+        def api(method, payload):
+            if method.endswith("/running"):
+                return {"running": []}
+            if method.endswith("/launch"):
+                launches.append(payload)
+                return {"returnValue": True}
+            return {"returnValue": True}
+        def sleep(seconds):
+            current["time"] += seconds
+        with self.assertRaisesRegex(RuntimeError, "after 1 bounded launch attempt"):
+            reload_home.reload_home(
+                "--visible", api=api, sleep=sleep, clock=lambda: current["time"],
+                starttime=lambda pid: None,
+                validator=lambda method, payload: None, inspect_preview=self.owned_preview)
+        self.assertEqual(len(launches), 1)
+
+    def test_term_error_does_not_skip_launch_attempt(self):
+        before = [{"id": reload_home.APP, "processid": 100},
+                  {"id": reload_home.APP, "processid": 102}]
+        after = [{"id": reload_home.APP, "processid": 103}]
+        ticks = {100: "old-one", 102: "old-two", 103: "new-home"}
+        running_calls = {"count": 0}
+        launches = []
+        current = {"time": 0.0}
+        def api(method, payload):
+            if method.endswith("/running"):
+                running_calls["count"] += 1
+                return {"running": before if running_calls["count"] == 1 else after}
+            if method.endswith("/launch"):
+                launches.append(payload)
+            return {"returnValue": True}
+        def terminate(pid, sig):
+            if pid == 100:
+                raise OSError("transient signal failure")
+            ticks[pid] = "gone"
+        def sleep(seconds):
+            current["time"] += seconds
+        result = reload_home.reload_home(
+            "--visible", api=api, sleep=sleep, clock=lambda: current["time"],
+            starttime=lambda pid: ticks.get(pid),
+            read_params=lambda pid: {"parameters": {"snapshot": False}},
+            readlink=lambda path: "/usr/bin/com.webos.app.home", terminate=terminate,
+            validator=lambda method, payload: None, inspect_preview=self.owned_preview)
+        self.assertEqual(result["new_home_pids"], [103])
+        self.assertEqual(len(launches), 1)
 
     def test_nested_snapshot_is_rejected_unless_explicit_rollback_exception(self):
         apps = [{"id": "com.webos.app.youtube", "processid": 200}]
@@ -408,7 +666,8 @@ class HomeReloadTests(unittest.TestCase):
         kwargs = dict(api=api, sleep=lambda _: None, clock=lambda: 0,
                       starttime=lambda pid: ticks.get(pid),
                       read_params=lambda pid: {"parameters": {"snapshot": True}},
-                      validator=lambda method, payload: None)
+                      validator=lambda method, payload: None,
+                      inspect_preview=self.owned_preview)
         with self.assertRaisesRegex(RuntimeError, "CRIU snapshot"):
             reload_home.reload_home("--hidden", **kwargs)
         running_calls["count"] = 0
@@ -424,7 +683,8 @@ class HomeReloadTests(unittest.TestCase):
             if method.endswith("/launch"):
                 raise ValueError("launch schema rejected")
         with self.assertRaisesRegex(ValueError, "launch schema rejected"):
-            reload_home.reload_home("--hidden", api=api, validator=reject_launch)
+            reload_home.reload_home("--hidden", api=api, validator=reject_launch,
+                                    inspect_preview=self.owned_preview)
         self.assertEqual(requests, [])
 
     def test_no_argument_or_unacknowledged_reload_does_not_call_luna(self):
