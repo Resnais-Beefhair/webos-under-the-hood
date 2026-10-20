@@ -167,7 +167,8 @@ class PrepareTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("git"), "Git is required to exercise ignored-state checks")
     def test_output_confines_to_ignored_state_and_refuses_collision_and_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            # Production ROOT is canonical; Windows TMP can use an 8.3 alias.
+            root = Path(temp).resolve()
             subprocess.run(["git", "init", "-q", str(root)], check=True)
             (root / ".gitignore").write_text(".local-state/\n", encoding="utf-8")
             state = root / ".local-state"
