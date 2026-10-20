@@ -12,6 +12,8 @@ This optional, reversible customization empties only the **main YouTube app laun
 
 The added guard is the same tiny early return used by the tested customization. No LG firmware QML is tracked or distributed from this repository. The original and generated patched QML exist only in the reader's ignored `.local-state` output and (after manual staging) on the TV. Nothing downloads vendor firmware or overwrites its file: the patch is exposed through an exact read-only bind mount. The two Home checkpoint paths are also read-only binds to a retained empty directory; no CRIU snapshot is deleted or globally changed.
 
+Both checkpoint targets must already exist as real directories. A missing target now causes a hard refusal with each checkpoint/UI mount state reported; it is never silently skipped or created. The public boot/recovery changes below are offline-tested, not hardware-qualified.
+
 ## Prepare locally (no TV mutation)
 
 Run from the repository root and keep the same shell open for the command blocks below so `TV`, `BASE`, and `OUT` retain their values. Set `TV` to an **existing** SSH alias that already has the necessary authorized root-capable access; do not disable host-key checks. These commands only extract the exact source and create a local bundle. `.local-state` must be ignored by Git before proceeding because the local bundle includes the proprietary original QML as a private recovery copy.
@@ -55,7 +57,7 @@ These binary-safe SSH stdin transfers do not require an SFTP server or modern SC
 
 ## Check, then opt in
 
-These are separate steps. Check-only commands do not mount or reload Home. The reload preflight reads Home's running-app state and native schemas but does not reload it.
+These are separate steps. Check-only commands do not mount or reload Home. The reload preflight reads Home's running-app state and native schemas but does not establish activation. Read-only/no-action helper imports suppress bytecode writes too.
 
 ```sh
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
@@ -73,14 +75,16 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
   "python '$BASE/preview_runtime.py' --apply --ack-mount"
 ```
 
-Verify the UI before continuing. A Home reload is a separate disruptive action, so perform it only after a separate human decision:
+Review the mount result before continuing; a mount does not replace code already mapped into Home, so a still-unchanged UI is not itself a failure. A Home reload is a separate disruptive action, so perform it only after a separate human decision:
 
 ```sh
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
   "python '$BASE/reload_home.py' --hidden --ack-home-reload"
 ```
 
-The reload validates native SAM schemas, uses a controlling PTY for Luna, sends `closeByAppId` with `{id:com.webos.app.home}`, verifies PID **and** `/proc/PID/stat` start time, uses only exact-executable `SIGTERM` as fallback (never `KILL`), rejects a restored Home CRIU snapshot, and confirms other app PIDs and start times are unchanged. A failed check is not permission to relax a guard.
+Before closing Home, normal reload independently requires all three expected binds to be exact owned read-only mounts. Missing, writable, foreign/stacked or incomplete layers refuse without app changes. It validates native SAM schemas, uses a controlling PTY for Luna, sends `closeByAppId` with `{id:com.webos.app.home}`, verifies PID **and** `/proc/PID/stat` start time, uses only exact-executable `SIGTERM` as fallback (never `KILL`), and rejects a restored Home CRIU snapshot. Preexisting other app identities must remain unchanged; a newly appearing app alone no longer causes a false failure.
+
+A launch error gets up to three bounded attempts, checking for a fresh Home identity before another request. An accepted launch is not duplicated merely because the running list lags. TERM errors cannot skip relaunch. A final failure returns nonzero with an explicit visible/original-snapshot recovery command. Preserve the error and use the [manual failure playbook](../docs/recovery.md#failure-playbook-optional-home-reload-fails); a failure after close does not mean Home was restored. A failed check is not permission to relax a guard.
 
 ## Optional persistence after screen QA
 
@@ -92,6 +96,8 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
 ```
 
 Installation is atomic and no-overwrite. Repeating it for the identical owned hook is idempotent; a foreign hook is refused. The wrapper explicitly invokes `preview_runtime.py --boot --ack-mount --ack-home-reload`: it mounts the pinned patch and existing Home checkpoint directories read-only, then reloads **only Home hidden**, and only when new mounts were needed. This avoids retaining old QML in a CRIU-restored process. It never reboots, restarts SAM or deliberately closes another app; reload checks their process identities. A new firmware source hash makes it refuse. Physical boot ordering remains untested. Remove the persistent hook through rollback below.
+
+If a boot reload fails, the runtime attempts to detach **only this invocation's newly created, still-verifiably-owned read-only binds**, then attempts a visible launch with original snapshots allowed. Preexisting owned binds and the persistent hook are not broadly removed; this is not a promise that every original layer was restored. Changed/foreign/stacked/writable targets are preserved and reported. Recovery failure returns nonzero with instructions, without automatic reboot, SAM restart, snapshot deletion or KILL escalation. Missing required checkpoint directories refuse before new binds or reload. These new failure paths have mocked offline tests only.
 
 ## Rollback
 

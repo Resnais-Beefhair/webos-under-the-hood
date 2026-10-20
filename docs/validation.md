@@ -50,6 +50,12 @@ The package uses a fresh allowlisted source tree, not the private project or its
 
 Three real-data evidence panels were rendered locally from [allowlisted JSON](../assets/evidence/cx-internals.json) and visually checked for legibility and identifiers. They are **reformatted observations, not terminal screenshots**. [Gallery](gallery.md)
 
+### Version 0.1.0 audit expansion
+
+The current four generated helpers were again compiled in the TV's Python 2.7.15 **in memory**, and the current reload helper's native getter/schema `--preflight` passed, with helper imports held in `sys.modules` and bytecode disabled. The pinned transformation of the privately preserved original QML matched the expected output digest. No helper was deployed and no mount, app close/launch, reload, setting or reboot occurred. Large verification source was streamed over pinned SSH stdin, not installed as a TV file.
+
+The expanded public audit was exercised again read-only on the source TV after integration. It returned masked/inactive voiceinput/contentminer, active `voiceconductor`, exact-target mount counts/modes, fixed public-hook states/hashes and SSH/telnet preference booleans. In this source setup the optional hook used a legacy/custom name, so the fixed public preview-hook path correctly reported absent; that is not proof of no persistence. Existing stacked hosts layers were reported as counts, not adopted or changed. The new `acr`/`advertising`/`voice` setters, DNS probe after apply and new Home-retry/boot-recovery paths were not live-invoked.
+
 ## Not completed or not supported
 
 - A physical cold-start persistence/early-boot test, full streaming playback regression and every physical remote-control path.

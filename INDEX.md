@@ -1,6 +1,7 @@
 # Documentation index
 
 - [README and starting point](README.md)
+- [Versioned changes and evidence limits](CHANGELOG.md)
 - [Agent operating contract](AGENTS.md)
 - [Compatibility and safety](docs/compatibility.md)
 - [Rooting background](docs/rooting.md)

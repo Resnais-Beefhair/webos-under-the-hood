@@ -12,6 +12,8 @@ import signal
 import subprocess
 import sys
 import time
+# A read-only --preflight must not create preview_runtime.pyc on the TV.
+sys.dont_write_bytecode = True
 import preview_runtime
 
 APP = "com.webos.app.home"

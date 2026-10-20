@@ -33,7 +33,7 @@ The public [connection guide](connection.md) uses placeholders and lets you perf
 
 ## Existing settings that were observed, not newly changed by the later toolkit
 
-`option.livePlus`, `option.turnOnByVoice`, `general.adCookie` and `general.voiceLongDistance` were already `"off"` and were preserved. The historical setup record lists additional advertising/AI/promotion switches; not all of its claimed names and semantic effects were independently verified. They are not blindly replayed by the public CLI. Use the TV UI and actual native schemas for any additional setting.
+`option.livePlus`, `option.turnOnByVoice`, `general.adCookie` and `general.voiceLongDistance` were already `"off"` and were preserved. Version 0.1.0 now exposes separate optional `acr`, `advertising` and combined `voice` groups for those exact native keys; this is offline-tested public functionality, not a newly executed source-TV write. See the [privacy matrix](privacy-matrix.md). The historical setup record lists additional advertising/AI/promotion switches; not all of its claimed names and semantic effects were independently verified. They are not blindly replayed by the public CLI. Use the TV UI and actual native schemas for any additional setting.
 
 ## Existing startup and hosts protections
 

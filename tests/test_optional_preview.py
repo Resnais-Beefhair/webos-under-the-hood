@@ -49,6 +49,23 @@ def build_synthetic_bundle(source):
 
 
 class PrepareTests(unittest.TestCase):
+    def test_reload_import_writes_no_bytecode_even_without_environment_flag(self):
+        bundle, _ = build_synthetic_bundle(SYNTHETIC_QML)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("reload_home.py", "rollback_preview.py", "preview_runtime.py", "manage_boot_hook.py"):
+                (root / name).write_bytes(bundle[name])
+            code = ("import runpy, sys; sys.dont_write_bytecode=False; "
+                    "sys.path.insert(0, sys.argv[1]); "
+                    "runpy.run_path(sys.argv[1] + '/' + sys.argv[2], run_name='read_only_import')")
+            env = dict(os.environ)
+            env.pop("PYTHONDONTWRITEBYTECODE", None)
+            for entrypoint in ("reload_home.py", "rollback_preview.py"):
+                result = subprocess.run([sys.executable, "-c", code, temp, entrypoint], env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(list(root.rglob("*.pyc")), "read-only helper import wrote bytecode")
+
     def test_exact_guard_inserted_once_at_expected_anchor(self):
         source = SYNTHETIC_QML
         patched_bytes = source.replace(prepare.ANCHOR, prepare.ANCHOR + prepare.GUARD, 1)

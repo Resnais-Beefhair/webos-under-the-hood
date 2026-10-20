@@ -5,9 +5,9 @@ This is the boundary of the public toolkit, not a promise that the TV stops send
 | Data path / feature | Exact intervention | Public coverage / verification boundary |
 |---|---|---|
 | Watched-list collection | `option.watchedListCollection` and `option.hbbTvDeviceId` | Optional `collection` group. Not the ACR switch; does not reset all identifiers or delete history. |
-| ACR / Live Plus | `option.livePlus` | Separate optional settings group. `off` was observed on the source TV; the public write path has not been hardware-exercised. Does not prove absence of all content recognition. |
-| Advertising cookie | `general.adCookie` | Separate optional settings group, not a universal advertising-ID reset, consent withdrawal or ad blocker. |
-| Voice wakeup / distance settings | `option.turnOnByVoice`, `general.voiceLongDistance` | Separate optional settings groups. No microphone payload inspection or proof of hardware microphone isolation. |
+| ACR / Live Plus | `option.livePlus` | Optional `acr` group. `off` was observed on the source TV; the public write path has not been hardware-exercised. Does not prove absence of all content recognition. |
+| Advertising cookie | `general.adCookie` | Optional `advertising` group, not a universal advertising-ID reset, consent withdrawal or ad blocker. |
+| Voice wakeup / distance settings | `option.turnOnByVoice`, `general.voiceLongDistance` | Optional `voice` group, with two native categories and one checkpoint. A partial write is not an atomic transaction. No microphone payload inspection or proof of hardware microphone isolation. |
 | Voice-input service | Exact voiceinput unit bind plus effective manager-state check | Optional firmware/hash-pinned hook. Binaries and `voiceconductor` remain intact. Protection before HBC startup and physical cold-boot persistence are not established. |
 | Content-mining service | `contentminer.service` effective mask/inactive check | Optional service hook preserves the expected state; no claim of blocking every collection path. |
 | HbbTV | `option.hbbTV` | Optional `hbbtv` group sets the proven string `off`, not an assumed `offByUser`. **Later post-start observation read `on`; persistence/cause remain unresolved.** Verify manually after every start. |
