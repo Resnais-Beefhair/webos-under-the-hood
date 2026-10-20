@@ -39,7 +39,7 @@ The public [connection guide](connection.md) uses placeholders and lets you perf
 
 The source TV already had a custom exact-hosts list, a hosts bind hook and Homebrew Channel's own startup behavior. The HBC source was checksum-compared with its upstream version. Selected HBC startup code covered update blocking and telemetry-spool mounts; it was **not modified or reimplemented** here.[3]
 
-A reference-only, sanitized list of the observed public hostname redirects is provided in [reference/hosts-observed.txt](../reference/hosts-observed.txt). It is not a new recommended blocklist and is not installed by this toolkit. The old hosts hook could layer over HBC's own hosts bind; do not stack a new one to imitate it. `/etc/hosts` supports exact names, not wildcard blocking. Blocked names do not prove the contents of encrypted traffic, and broad lists can break store, voice, recommendations or updates.
+A reference-only, sanitized list of the observed public hostname redirects is provided in [reference/hosts-observed.txt](../reference/hosts-observed.txt), with [provenance, omitted local/discovery rows and functional risks](../reference/README.md). It is not a new recommended blocklist and is not installed by this toolkit. The old hosts hook could layer over HBC's own hosts bind; do not stack a new one to imitate it. `/etc/hosts` supports exact names, not wildcard blocking. Blocked names do not prove the contents of encrypted traffic, and broad lists can break store, voice, recommendations or updates.
 
 ## Kept intact
 

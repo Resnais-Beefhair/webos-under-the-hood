@@ -1,0 +1,58 @@
+{
+  "observation_date": "2026-10-20",
+  "tested_profile": {
+    "model": "OLED65CX6LA",
+    "firmware": "04.64.00",
+    "webos": "5.6.2-21"
+  },
+  "read_only": true,
+  "boot_evidence": {
+    "owner_reported_start_after_overnight_off": true,
+    "boot_id_changed_from_preserved_baselines": false,
+    "physical_cold_boot_independently_established": false,
+    "interpretation": "Post-start observation only; unchanged boot identity does not establish a fresh cold boot or its cause."
+  },
+  "settings": {
+    "general": {
+      "adCookie": "off",
+      "voiceLongDistance": "off"
+    },
+    "option": {
+      "hbbTV": "on",
+      "hbbTvDeviceId": "off",
+      "livePlus": "off",
+      "turnOnByVoice": "off",
+      "watchedListCollection": "off"
+    },
+    "support": {
+      "automaticUpdate": "off"
+    }
+  },
+  "service_masks": {
+    "voiceinput.service": {
+      "LoadState": "masked",
+      "ActiveState": "inactive",
+      "UnitFileState": "masked"
+    },
+    "contentminer.service": {
+      "LoadState": "masked",
+      "ActiveState": "inactive",
+      "UnitFileState": "masked-runtime"
+    }
+  },
+  "ethernet_dns": {
+    "stored_filtering_pair_matches": true,
+    "effective_filtering_pair_matches": true
+  },
+  "optional_preview": {
+    "all_three_mounts_single_owned_and_read_only": true,
+    "guarded_qml_digest_matches": true,
+    "native_home_snapshot_marker_present": false,
+    "ui_and_video_playback_tested": false
+  },
+  "ssh_with_pinned_host_key_worked": true,
+  "ordinary_telnet_refused": true,
+  "sdx_authenticated": true,
+  "writes_reloads_or_reboots_during_check": false,
+  "hbbtv_exception": "hbbTV read back as on, unlike the earlier off observation. No reapply or offByUser experiment was performed; persistence and cause remain unverified."
+}

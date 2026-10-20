@@ -49,6 +49,55 @@ These checks are **not transaction isolation**. Arrange an exclusive administrat
 
 Use the [module's rollback](../optional-preview/README.md#rollback). It removes only its exact owned hook/mounts; it keeps the source files and empty checkpoint placeholder. Restoring the visible firmware file does not replace code already mapped into Home, so an explicitly approved Home-only reload is a separate step. No SAM restart, snapshot deletion, reboot or package-directory deletion is part of recovery.
 
+## Failure playbook: streaming breaks after DNS
+
+Stop applying further features. Keep your working pinned SSH session and checkpoint. A DNS response or successful ConnMan readback is not proof that a particular streaming provider works.
+
+1. Collect a fresh **private** audit in a new output file, without replaying the setter:
+
+```sh
+python3 tvctl.py --target lg-tv audit --output .local-state/dns-failure-audit.json
+python3 -c 'import json; from pathlib import Path; c=json.loads(Path(".local-state/dns.json").read_text()); print("Saved manual resolvers:", c["before"]["stored_nameservers"])'
+python3 tvctl.py --target lg-tv rollback --checkpoint .local-state/dns.json
+```
+
+2. Review that plan. If you explicitly decide to restore this one change, in the same-boot exclusive administration window:
+
+```sh
+python3 tvctl.py --target lg-tv --confirm-model 'LG OLED65CX6LA' rollback --checkpoint .local-state/dns.json --apply --confirm-target lg-tv
+python3 tvctl.py --target lg-tv audit --output .local-state/dns-restored-audit.json
+```
+
+3. Retest the exact failing app and LAN-hosted playback, if used. Do not replace the saved resolver with a copied public default or alter IP, gateway, IPv6 or router settings. If the guard refuses after a new boot, inspect the saved list and restore it through the TV network UI, or restore the recorded **Automatic DNS** UI choice for an originally automatic configuration. Empty ConnMan-list reset syntax remains unsupported. Do not edit the checkpoint's boot ID to bypass that refusal.
+
+The bounded post-apply DNS probe reports resolution separately from configuration verification. A failed or unavailable probe is a reason to investigate or explicitly restore the saved baseline, not an automatic rollback. A successful probe does not prove filtering coverage, HTTPS reachability or video playback.
+
+## Failure playbook: optional Home reload fails
+
+Only enter a reload/recovery step in an owner-approved interruption window. Use the **same runtime base you installed**, not a guessed path. From the optional module's documented installation, with `TV` set to your already-verified SSH alias:
+
+```sh
+BASE=/var/lib/webosbrew/home-preview-override
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/preview_runtime.py' --check"
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/manage_boot_hook.py' --check"
+```
+
+Keep the error and package files private. Missing checkpoint directories, foreign or stacked mounts, unsupported hashes/schemas and changed app identities mean **stop**, not create directories, kill more processes or force-unmount. A newly appearing app is not itself evidence of damage; compare the identities of apps that existed before the reload.
+
+If you explicitly choose to abandon the cosmetic feature, this first command disables only the exact owned persistent hook and detaches only the verified owned binds. It does **not** reboot or start Home:
+
+```sh
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/rollback_preview.py' --restore-owned-mounts --ack-rollback"
+```
+
+Inspect the result. Only after successful layer restoration and a **separate Home-only reload decision**, the next command requests the original firmware presentation, allowing its original Home snapshot behavior:
+
+```sh
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" "python '$BASE/reload_home.py' --hidden --allow-original-snapshot --ack-home-reload"
+```
+
+Do not start the patched reload without all required owned read-only mounts. If this recovery also fails, stop and preserve evidence; do not restart SAM, delete CRIU state, escalate to KILL or reboot as an undocumented fallback. After any lazy detach, keep the source/empty-placeholder files while existing processes may retain their file descriptors. [Module-specific failure handling](../optional-preview/README.md)
+
 ## SSH and telnet
 
 Use [connection.md](connection.md#recovery). Preserve an old working management route until a **new** key-authenticated, pinned SSH session works. Never remove every authorized key, copy another person's private key, blindly accept a changed server host key or reopen network access without the owner's security decision.

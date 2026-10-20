@@ -53,6 +53,7 @@ The [separate optional module](optional-preview/README.md) generates a tiny prod
 - No consent/EULA mass edits. On this CX the native withdrawal workflow can revoke SDX terms and reboot; it was investigated but **not executed**.
 - No router firmware changes, whole-house DNS change, firewall installation, automatic firmware update, exploit execution or factory reset.
 - The original changes were read back and selected UI/network checks passed. **Full streaming playback regression and a physical cold boot were not performed.** Public packaging/refactoring tests are distinct from those device observations. [Validation record](docs/validation.md)
+- A later read-only post-start check found the masks, DNS and owned preview overlays still present, but **HbbTV read back as `"on"`**. Boot identity had not changed, so that observation does not establish physical cold-boot persistence or the cause of the HbbTV change. No automatic reapply was performed. [Sanitized post-start evidence](assets/evidence/post-start-verification.json)
 
 ## Let an agent help
 

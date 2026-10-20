@@ -2,7 +2,7 @@
 
 This feature stops **voiceinput** and preserves the existing **contentminer** mask. Voice input may stop working. Get the owner's approval, read [compatibility](compatibility.md), keep working SSH, and capture the current state first. Do not infer that every audio/recording path is covered.
 
-The included shell payload is adapted from the source-device-tested hook. Its no-argument mode refuses; only `--apply-services` enables writes. The boot wrapper pins the exact tested `/etc/version` build. The public entry-point changes and these installation instructions were tested offline, not reinstalled on the running source TV.
+The included shell payload is adapted from the source-device-tested hook. Its no-argument mode refuses; `--check` is read-only and only `--apply-services` enables writes. Both modes pin the exact tested `/etc/version` build and validate layer ownership. The public `--check` was exercised on the source TV without installing/replacing its hook; public apply/install paths remain offline-tested, not reinstalled on that TV.
 
 ## 1. Read-only preflight and checkpoint
 
@@ -12,6 +12,7 @@ chmod 700 .local-state
 python3 tvctl.py --target lg-tv audit --output .local-state/before-services.json
 ssh lg-tv 'systemctl show voiceinput.service contentminer.service -p LoadState -p ActiveState -p UnitFileState'
 ssh lg-tv 'cat /etc/version'
+ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes lg-tv 'sh -s -- --check' < services/privacy-services.sh
 ssh lg-tv 'python -' <<'PY'
 import os
 p = "/etc/systemd/system/voiceinput.service"
@@ -20,7 +21,9 @@ print([x.strip() for x in open("/proc/mounts") if x.split()[1] == p])
 PY
 ```
 
-The expected unit is an existing regular file, **not** a foreign symlink/mount. If any bind already covers that exact unit, or an old privacy hook exists, stop and inspect the existing implementation instead of stacking another one. In the source setup `contentminer` was already masked/inactive; it was not unmasked as a “reset”.
+The expected unmasked unit is an existing regular file, **not** a foreign symlink/mount. Its SHA-256 must be `53775553d67b86f7d826f1f0ab48eb9974de12b6602e5e5841de176aa03c0b63`, pinned from the privately preserved original unit on the tested build; vendor unit contents are not redistributed. A different unit on the same build refuses before either service is stopped. With an already-installed exact `/dev/null` bind, the original digest is hidden: the checker instead verifies a single bind and exact target/source inode identity, and reports that it cannot read the underlying unit hash. It never pretends `/dev/null` is the original firmware file.
+
+`--check` creates no log or lock, mount, service change or hook file. A successful check means the proposed layers are eligible, **not** that masks have been applied; current manager states are reported separately. If any old hook or bind exists, inspect the implementation and your saved ownership records instead of stacking another one. In the source setup `contentminer` was already masked/inactive; it was not unmasked as a “reset”.
 
 Capture the runtime links and unit digest privately, with no-overwrite output:
 

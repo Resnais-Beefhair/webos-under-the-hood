@@ -40,5 +40,30 @@ jobs:
           python tvctl.py --help
           python tools/check_publication.py
 
+  portable-windows:
+    name: Windows portable host tests (no TV or secrets)
+    runs-on: windows-latest
+    timeout-minutes: 8
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out public source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Pure host tests; device/POSIX-only cases explicitly skip
+        run: python -m unittest discover -s tests -v
+      - name: Offline metadata and publication checks
+        run: |
+          python tvctl.py --help
+          python tvctl.py --version
+          python tvctl.py --list-features
+          python tools/check_publication.py
+
 # No TV address, key, live device connection, pairing credential or provider API
 # token is used. Results apply only to the exact commit tested in each run.
