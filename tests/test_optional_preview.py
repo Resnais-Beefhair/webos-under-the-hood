@@ -529,6 +529,7 @@ class HomeReloadTests(unittest.TestCase):
             read_params=lambda pid: {"parameters": {"snapshot": False}},
             readlink=lambda path: "/usr/bin/com.webos.app.home", terminate=term,
             validator=lambda method, payload: None, inspect_preview=self.owned_preview,
+            dismiss=lambda identities: {"native_window_hide_verified": True, "navigation_verified": False},
         )
         self.assertEqual(result["new_home_pids"], [101])
         self.assertTrue(result["other_app_pids_and_starttimes_unchanged"])
@@ -537,8 +538,10 @@ class HomeReloadTests(unittest.TestCase):
         self.assertIn(("com.webos.applicationManager/closeByAppId", {"id": reload_home.APP}), requests)
         launch = [payload for method, payload in requests if method.endswith("/launch")][0]
         self.assertEqual(launch["id"], reload_home.APP)
-        self.assertTrue(launch["launchHidden"])
-        self.assertEqual(launch["preload"], "full")
+        self.assertFalse(launch["launchHidden"])
+        self.assertNotIn("preload", launch)
+        self.assertTrue(result["dismissal"]["native_window_hide_verified"])
+        self.assertFalse(result["dismissal"]["navigation_verified"])
 
     def test_failed_launch_is_retried_only_until_a_fresh_home_appears(self):
         before = [{"id": reload_home.APP, "processid": 100}]
@@ -687,7 +690,8 @@ class HomeReloadTests(unittest.TestCase):
                       starttime=lambda pid: ticks.get(pid),
                       read_params=lambda pid: {"parameters": {"snapshot": True}},
                       validator=lambda method, payload: None,
-                      inspect_preview=self.owned_preview)
+                      inspect_preview=self.owned_preview,
+                      dismiss=lambda identities: {"native_window_hide_verified": True, "navigation_verified": False})
         with self.assertRaisesRegex(RuntimeError, "CRIU snapshot"):
             reload_home.reload_home("--hidden", **kwargs)
         running_calls["count"] = 0
