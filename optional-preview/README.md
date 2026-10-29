@@ -86,6 +86,8 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
 
 Before closing Home, normal reload independently requires all three expected binds to be exact owned read-only mounts. Missing, writable, foreign/stacked or incomplete layers refuse without app changes. It validates native SAM schemas, uses a controlling PTY for Luna, sends `closeByAppId` with `{id:com.webos.app.home}`, verifies PID **and** `/proc/PID/stat` start time, uses only exact-executable `SIGTERM` as fallback (never `KILL`), and rejects a restored Home CRIU snapshot. Preexisting other app identities must remain unchanged; a newly appearing app alone no longer causes a false failure.
 
+`--hidden` describes the **final** state, not hidden initialization. It starts Home normally with `launchHidden:false` and no native `preload` request, then dismisses the initialized Home through native `closeByAppId`. This can briefly show the launcher. A fresh `/var/log/home` `windowHide received` event and unchanged fresh Home PID/start time are required; an old log marker, rotation/truncation or Luna success alone cannot pass. The result explicitly reports `navigation_verified:false`: the hide acknowledgement is not a remote-control or cold-boot usability test. The old full-preload path reproduced an invisible launcher that still received keys on the audited CX. Retaining `launchHidden:true` while moving `activateType:"preload"` into `params` also reproduced it and is not a supported workaround.
+
 A launch error gets up to three bounded attempts, checking for a fresh Home identity before another request. An accepted launch is not duplicated merely because the running list lags. TERM errors cannot skip relaunch. A final failure returns nonzero with an explicit visible/original-snapshot recovery command. Preserve the error and use the [manual failure playbook](../docs/recovery.md#failure-playbook-optional-home-reload-fails); a failure after close does not mean Home was restored. A failed check is not permission to relax a guard.
 
 ## Optional persistence after screen QA
@@ -97,7 +99,7 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TV" \
   "python '$BASE/manage_boot_hook.py' --install --ack-install --ack-boot-home-reload"
 ```
 
-Installation is atomic and no-overwrite. Repeating it for the identical owned hook is idempotent; a foreign hook is refused. The wrapper explicitly invokes `preview_runtime.py --boot --ack-mount --ack-home-reload`: it mounts the pinned patch and existing Home checkpoint directories read-only, then reloads **only Home hidden**, and only when new mounts were needed. This avoids retaining old QML in a CRIU-restored process. It never reboots, restarts SAM or deliberately closes another app; reload checks their process identities. A new firmware source hash makes it refuse. Physical boot ordering remains untested. Remove the persistent hook through rollback below.
+Installation is atomic and no-overwrite. Repeating it for the identical owned hook is idempotent; a foreign hook is refused. The wrapper explicitly invokes `preview_runtime.py --boot --ack-mount --ack-home-reload`: it mounts the pinned patch and existing Home checkpoint directories read-only, then reloads **only Home to a hidden final state**, and only when new mounts were needed. Normal initialization may briefly display Home before native dismissal; it does not request native preload. This avoids retaining old QML in a CRIU-restored process. It never reboots, restarts SAM or deliberately closes another app; reload checks their process identities. A new firmware source hash makes it refuse. Physical boot ordering remains untested. Remove the persistent hook through rollback below.
 
 If a boot reload fails, the runtime attempts to detach **only this invocation's newly created, still-verifiably-owned read-only binds**, then attempts a visible launch with original snapshots allowed. Preexisting owned binds and the persistent hook are not broadly removed; this is not a promise that every original layer was restored. Changed/foreign/stacked/writable targets are preserved and reported. Recovery failure returns nonzero with instructions, without automatic reboot, SAM restart, snapshot deletion or KILL escalation. Missing required checkpoint directories refuse before new binds or reload. These new failure paths have mocked offline tests only.
 
@@ -125,6 +127,7 @@ From the repository root:
 
 ```sh
 python3 -B -m unittest discover -s tests -p 'test_optional_preview.py' -v
+python3 -B -m unittest discover -s tests -p 'test_home_lifecycle.py' -v
 python3 -B -c "from pathlib import Path; [compile(p.read_text(), str(p), 'exec') for p in (Path('optional-preview/prepare.py'), Path('tests/test_optional_preview.py'))]"
 ```
 

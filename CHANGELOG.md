@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Home startup lifecycle
+
+- Fix the optional Home helper's hidden final state without native full-preload or `activateType:"preload"` initialization. Both hidden-initialization variants reproduced an invisible Home launcher that still received keys on the audited CX. Normal initialization followed by native dismissal passed bounded Home/arrow/OK/Back screen checks.
+- Require a fresh native `windowHide received` event and unchanged Home process identity after dismissal; reject stale evidence, log rotation/truncation and process replacement. Keep the existing firmware, mount ownership, snapshot and unrelated-app identity guards.
+- Document that normal initialization can briefly show Home, and that a hide acknowledgement does not prove navigation. Physical remote use, real cold-boot timing and broad playback/DRM regression remain untested. Add synthetic success/failure regressions; no private captures, device logs or deployment checkpoints are included.
+
 ## 0.2.0 — 20 October 2026
 
 ### Complete initial-access guide

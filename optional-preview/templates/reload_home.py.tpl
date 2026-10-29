@@ -9,6 +9,7 @@ try:
 except ImportError:  # TV Python 2.7; pipes is absent from newer host Python.
     from pipes import quote
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -147,8 +148,8 @@ def launch_payload(mode):
         "checkUpdateOnLaunch": False,
         "launchHidden": False,
     }
-    if mode == "--hidden":
-        payload.update({"preload": "full", "launchHidden": True})
+    # Native preload can leave invisible Home owning input on the CX.
+    # --hidden uses ordinary initialization, then a verified native dismissal.
     return payload
 
 
@@ -167,10 +168,46 @@ def _fresh_home(apps, stamps, starttime):
     return fresh
 
 
+def dismiss_initialized_home(identities, api=luna, sleep=time.sleep, clock=time.time,
+                             starttime=start_time, log_path="/var/log/home"):
+    """Dismiss fresh Home and require a new native hide acknowledgement."""
+    if not identities or any(starttime(pid) != stamp or stamp is None
+                             for pid, stamp in identities.items()):
+        raise RuntimeError("Home identity changed before native dismissal")
+    info = os.lstat(log_path)
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError("Home lifecycle log is not a regular nonsymlink file")
+    with open(log_path, "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+            raise RuntimeError("Home lifecycle log changed before dismissal")
+        stream.seek(0, 2)
+        offset = stream.tell()
+        api("com.webos.applicationManager/closeByAppId", {"id": APP})
+        deadline = clock() + 8
+        pending = b""
+        while True:
+            if any(starttime(pid) != stamp for pid, stamp in identities.items()):
+                raise RuntimeError("Home identity changed during native dismissal")
+            current = os.lstat(log_path)
+            if ((current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+                    or current.st_size < offset):
+                raise RuntimeError("Home lifecycle log rotated or truncated during dismissal")
+            pending += stream.read(65536)
+            offset = stream.tell()
+            if b"[main.cpp] windowHide received" in pending:
+                return {"native_window_hide_verified": True,
+                        "navigation_verified": False}
+            pending = pending[-128:]
+            if clock() >= deadline:
+                raise RuntimeError("Home native hide acknowledgement timed out; " + recovery_command())
+            sleep(0.2)
+
+
 def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
                 clock=time.time, starttime=start_time, read_params=read_home_params,
                 readlink=os.readlink, terminate=os.kill, validator=validate_payload,
-                inspect_preview=None):
+                inspect_preview=None, dismiss=None):
     if mode not in ("--hidden", "--visible"):
         raise ValueError("reload mode must be --hidden or --visible")
     if not allow_original_snapshot:
@@ -268,13 +305,27 @@ def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
     if any(starttime(pid) is None or starttime(pid) == stamps.get(pid) for pid in final_home):
         raise RuntimeError("Home process identity changed during final verification")
     params = dict((str(pid), read_params(pid)) for pid in final_home)
+    if not allow_original_snapshot and any("preload" in value for value in params.values()):
+        raise RuntimeError("Home unexpectedly entered the native preload lifecycle")
     snapshot_flags = dict((pid, is_snapshot(value)) for pid, value in params.items())
     if not allow_original_snapshot and any(snapshot_flags.values()):
         raise RuntimeError("Home restored a CRIU snapshot instead of starting new code")
+    dismissal = None
+    if mode == "--hidden":
+        identities = dict((pid, starttime(pid)) for pid in final_home)
+        if dismiss is None:
+            dismissal = dismiss_initialized_home(identities, api=api,
+                sleep=sleep, clock=clock, starttime=starttime)
+        else:
+            dismissal = dismiss(identities)
+        final = running(api)
+        if home_pids(final) != final_home or any(starttime(pid) != stamp
+                                                for pid, stamp in identities.items()):
+            raise RuntimeError("Home identity changed after native dismissal")
     other_after = other_app_identities(final, starttime)
     if any(identity not in other_after for identity in other_before):
         raise RuntimeError("an app that existed before reload changed PID or process start time")
-    return {
+    result = {
         "old_home_pids": sorted(old),
         "new_home_pids": sorted(final_home),
         "old_home_starttimes": stamps,
@@ -283,6 +334,9 @@ def reload_home(mode, allow_original_snapshot=False, api=luna, sleep=time.sleep,
         "other_app_pids_and_starttimes_unchanged": True,
         "mode": mode,
     }
+    if dismissal is not None:
+        result["dismissal"] = dismissal
+    return result
 
 
 def main(argv=None):
